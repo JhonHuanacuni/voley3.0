@@ -1,12 +1,12 @@
 :root {
-  --text: #242424;
+  --text: #181820;
   --text-muted: #6d6d6d;
-  --bg: #f2f3f8;
+  --bg: #fafafa;
   --surface: #ffffff;
-  --sidebar-bg: #6a42e5;
-  --primary: var(--sidebar-bg);
-  --primary-alt: #5a35c9;
-  --primary-hover: #5a35c9;
+  --sidebar-bg: #d15381;
+  --primary: #d15381;
+  --primary-alt: #b8436c;
+  --primary-hover: #b8436c;
   --border: #e3e4ec;
   --card: #ffffff;
   --shadow: 0 18px 45px rgba(28, 22, 61, 0.08);
@@ -89,18 +89,22 @@ option {
 .sidebar-brand {
   flex-shrink: 0;
   background: var(--sidebar-bg);
-  padding: 10px 0 12px 10px;
+  padding: 14px 12px 8px;
   line-height: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.22);
   margin-bottom: 4px;
+  display: flex;
+  justify-content: center;
 }
 
 .sidebar-logo {
-  width: 100%;
+  width: 118px;
   height: auto;
   display: block;
   object-fit: contain;
+  background: transparent;
   border-radius: 0;
+  padding: 0;
   box-shadow: none;
 }
 
@@ -317,7 +321,7 @@ option {
 }
 
 .sidebar-sublink.active {
-  background: #ede8fc;
+  background: #f8e6ed;
   color: var(--primary);
 }
 
@@ -481,7 +485,7 @@ option {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -776,7 +780,7 @@ option {
 .login-button:hover {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(106, 66, 229, 0.2);
+  box-shadow: 0 14px 28px rgba(209, 83, 129, 0.28);
 }
 
 .app-footer {

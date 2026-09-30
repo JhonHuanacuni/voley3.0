@@ -1,6 +1,6 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUser, faLock, faArrowRight } from "@fortawesome/free-solid-svg-icons";
-import logoOld from "../images/logo.jpg";
+import logoOld from "../images/logo.png";
 
 export default function LoginPage({
   username,

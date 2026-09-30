@@ -96,7 +96,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #ede8fc, #f8f7ff);
+  background: linear-gradient(145deg, #f8e6ed, #fff);
   color: var(--color-primary);
   font-size: 2.5rem;
 }
@@ -156,7 +156,7 @@
 }
 
 .perfil-badge--rol {
-  background: linear-gradient(135deg, #5b7cff, #6a42e5);
+  background: linear-gradient(135deg, #e48aab, #d15381);
 }
 
 .perfil-info-card {

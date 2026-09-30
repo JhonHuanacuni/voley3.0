@@ -29,8 +29,8 @@
   width: 100%;
   max-width: 25rem;
   padding: 28px 24px 24px;
-  background: #30385f;
-  color: #fff;
+  background: #fff;
+  color: #181820;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
@@ -84,7 +84,7 @@
 .login-vita-field input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid #f0d5e0;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.95);
   color: #1c163d;
@@ -96,8 +96,8 @@
 }
 
 .login-vita-field input:focus {
-  outline: 2px solid rgba(109, 190, 59, 0.45);
-  border-color: #6dbe3b;
+  outline: 2px solid rgba(209, 83, 129, 0.45);
+  border-color: #d15381;
 }
 
 .login-vita-button {
@@ -110,7 +110,7 @@
   padding: 12px 16px;
   border: none;
   border-radius: 6px;
-  background: #6dbe3b;
+  background: #d15381;
   color: #fff;
   font-size: 1rem;
   font-weight: 700;
@@ -119,6 +119,6 @@
 }
 
 .login-vita-button:hover {
-  filter: brightness(1.05);
+  background: #b8436c;
   transform: translateY(-1px);
 }

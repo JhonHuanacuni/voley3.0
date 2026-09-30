@@ -1,8 +1,8 @@
 :root {
-  --color-primary: #6a42e5;
-  --color-primary-hover: #5a35c9;
-  --color-primary-soft: #ede8fc;
-  --color-bg: #f6f7fb;
+  --color-primary: #d15381;
+  --color-primary-hover: #b8436c;
+  --color-primary-soft: #f8e6ed;
+  --color-bg: #fafafa;
   --color-surface: #ffffff;
   --color-border: #e3e6ef;
   --color-text: #1c2333;
@@ -59,7 +59,7 @@
   top: 0;
   bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, var(--color-primary) 0%, #8b6ff0 100%);
+  background: linear-gradient(180deg, var(--color-primary) 0%, #e48aab 100%);
 }
 
 .mantenedor-page-header-main {
@@ -583,7 +583,7 @@ button.page-breadcrumb-link:hover {
 
 .catalogo-buscador-lista button:hover,
 .catalogo-buscador-lista button.is-active {
-  background: #ece8ff;
+  background: #f8e6ed;
 }
 
 .catalogo-buscador-lista p {
@@ -674,7 +674,7 @@ button.page-breadcrumb-link:hover {
   align-self: flex-start;
   background: none;
   border: none;
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
   cursor: pointer;
   font-size: 0.85rem;
   padding: 0;
@@ -689,7 +689,7 @@ button.page-breadcrumb-link:hover {
   padding: 1.2rem 1rem;
   border: 2px dashed rgba(106, 66, 229, 0.35);
   border-radius: 10px;
-  background: var(--color-primary-soft, #ede8fc);
+  background: var(--color-primary-soft, #f8e6ed);
   cursor: pointer;
   text-align: center;
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
@@ -698,7 +698,7 @@ button.page-breadcrumb-link:hover {
 
 .image-file-drop:hover,
 .image-file-drop:focus-visible {
-  border-color: var(--color-primary, #6a42e5);
+  border-color: var(--color-primary, #d15381);
   background: #f3efff;
   box-shadow: 0 0 0 3px rgba(106, 66, 229, 0.12);
   outline: none;
@@ -716,7 +716,7 @@ button.page-breadcrumb-link:hover {
 
 .image-file-drop-icon {
   font-size: 1.6rem;
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
   margin-bottom: 0.1rem;
 }
 
@@ -775,13 +775,13 @@ button.page-breadcrumb-link:hover {
 .dias-semana-chip input {
   width: auto;
   margin: 0;
-  accent-color: var(--color-primary, #6a42e5);
+  accent-color: var(--color-primary, #d15381);
 }
 
 .dias-semana-chip.is-active {
-  border-color: var(--color-primary, #6a42e5);
-  background: var(--color-primary-soft, #ede8fc);
-  color: var(--color-primary, #6a42e5);
+  border-color: var(--color-primary, #d15381);
+  background: var(--color-primary-soft, #f8e6ed);
+  color: var(--color-primary, #d15381);
 }
 
 .dias-asistencia-resumen {
@@ -1036,7 +1036,7 @@ button.page-breadcrumb-link:hover {
 .ui-tab:hover,
 .informes-tab:hover,
 .examen-tab:hover {
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
   background: rgba(255, 255, 255, 0.55);
 }
 
@@ -1047,7 +1047,7 @@ button.page-breadcrumb-link:hover {
   background: var(--color-surface, #fff);
   border-color: var(--color-border, #e3e6ef);
   border-bottom-color: var(--color-surface, #fff);
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
   z-index: 1;
   box-shadow: 0 -1px 0 rgba(106, 66, 229, 0.08);
 }
@@ -1063,14 +1063,14 @@ button.page-breadcrumb-link:hover {
   top: 0;
   height: 3px;
   border-radius: 10px 10px 0 0;
-  background: var(--color-primary, #6a42e5);
+  background: var(--color-primary, #d15381);
 }
 
 .ui-tab--activa:hover,
 .informes-tab--activa:hover,
 .examen-tab.is-active:hover,
 .examen-tab--activa:hover {
-  color: var(--color-primary, #6a42e5);
+  color: var(--color-primary, #d15381);
 }
 
 .ui-tabs-panel-body,
