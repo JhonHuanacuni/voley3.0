@@ -1,0 +1,44 @@
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.dash-kpi {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.dash-kpi svg {
+  font-size: 1.4rem;
+  color: var(--sidebar-bg);
+}
+
+.dash-kpi p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.dash-kpi strong {
+  font-size: 1.35rem;
+}
+
+.dash-turnos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dash-turnos li {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}

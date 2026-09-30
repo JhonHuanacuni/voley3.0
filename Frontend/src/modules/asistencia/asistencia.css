@@ -1,0 +1,141 @@
+.asistencia-panel {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.85rem 1rem 0.9rem;
+  margin-bottom: 16px;
+}
+
+.asistencia-buscar span {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #d9def0;
+  border-radius: 6px;
+  padding: 0 0.55rem;
+  background: #fff;
+}
+
+.asistencia-buscar svg {
+  color: #9aa3b8;
+}
+
+.asistencia-buscar input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+}
+
+.asistencia-filtros {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  align-items: end;
+}
+
+.asistencia-filtros label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  width: 150px;
+  flex: 0 0 150px;
+  color: var(--color-text);
+}
+
+.asistencia-filtros .asistencia-buscar {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 340px;
+  min-width: 180px;
+}
+
+.asistencia-filtros .asistencia-turno {
+  width: 380px;
+  flex: 0 0 380px;
+}
+
+.asistencia-filtros .asistencia-turno select {
+  text-transform: uppercase;
+}
+
+.asistencia-filtros input,
+.asistencia-filtros select {
+  width: 100%;
+  border: 1px solid #d9def0;
+  border-radius: 6px;
+  padding: 0.32rem 0.5rem;
+  font-size: 0.84rem;
+  background: #fff;
+}
+
+.asistencia-buscar input {
+  border: 0;
+  border-radius: 0;
+  padding: 0.32rem 0;
+  font-size: 0.84rem;
+}
+
+.asistencia-ayuda {
+  margin: 0 0 12px;
+  color: var(--color-muted);
+  font-size: 0.88rem;
+}
+
+.asistencia-tabla {
+  overflow: auto;
+}
+
+.asistencia-nombre {
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.asistencia-acciones {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.asistencia-estado {
+  border: 1px solid #d9def0;
+  background: #fff;
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.asistencia-estado--presente.is-active {
+  background: #1e9e5a;
+  border-color: #1e9e5a;
+  color: #fff;
+}
+
+.asistencia-estado--ausente.is-active {
+  background: #d23b3b;
+  border-color: #d23b3b;
+  color: #fff;
+}
+
+.asistencia-estado--tarde.is-active {
+  background: #c7891b;
+  border-color: #c7891b;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .asistencia-filtros {
+    flex-wrap: wrap;
+  }
+
+  .asistencia-filtros label,
+  .asistencia-filtros .asistencia-turno,
+  .asistencia-buscar {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+}

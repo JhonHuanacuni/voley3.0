@@ -1,0 +1,22 @@
+Orden de ejecución en MySQL Workbench (schema VoleyDB)
+
+01_esquema.sql crea la base (destructivo: borra VoleyDB si ya existe).
+Puede ir con File > Run SQL Script.
+
+Los archivos 03 a 06 usan DELIMITER:
+  File > Open SQL Script, seleccionar VoleyDB, ejecutar con el rayo.
+  No usar File > Run SQL Script (error 1064).
+
+1. 30_09_2026/01_esquema.sql
+2. 30_09_2026/02_seed.sql
+3. 30_09_2026/03_usp_ciclo_turno_usuario.sql
+4. 30_09_2026/04_usp_alumna.sql
+5. 30_09_2026/05_usp_mensualidad_pago.sql
+6. 30_09_2026/06_usp_operacion.sql
+
+Desde Backend también:
+  .venv\Scripts\python.exe scripts\run_mysql_scripts.py
+  .venv\Scripts\python.exe scripts\migrar_sqlite.py
+
+Acceso local de verificación: vita / vita
+Los usuarios de voley 2.0 conservan su contraseña.
