@@ -18,6 +18,7 @@ from apps.menu_config import (
     MODULOS_PROTEGIDOS_ADMIN,
     SUBMODULO_PAGE_MAP,
 )
+from apps.permisos import funciones_usuario, pagina_visible
 
 
 def get_usuario_tipo(idusuario: str):
@@ -92,12 +93,15 @@ def get_menu_for_user(idusuario: str):
 
     modulos = Modulo.objects.filter(IDMODULO__in=permisos_por_modulo.keys(), ACTIVO=True).order_by('ORDEN')
     ocultos = _submodulos_ocultos(idusuario, id_tipo)
+    funciones = funciones_usuario(idusuario)
     menu = []
     for modulo in modulos:
         page = MODULO_PAGE_MAP.get(modulo.IDMODULO, modulo.IDMODULO.lower())
         permisos = permisos_por_modulo.get(modulo.IDMODULO, [])
         subs = Submodulo.objects.filter(IDMODULO=modulo, ACTIVO=True).order_by('ORDEN')
         if modulo.IDMODULO in MODULOS_MENU_DIRECTO or not subs.exists():
+            if not pagina_visible(page, funciones):
+                continue
             menu.append({
                 'idmodulo': modulo.IDMODULO,
                 'nombre': modulo.NOMBRE,
@@ -116,6 +120,7 @@ def get_menu_for_user(idusuario: str):
             }
             for sub in subs
             if sub.IDSUBMODULO not in ocultos
+            and pagina_visible(SUBMODULO_PAGE_MAP.get(sub.IDSUBMODULO, page), funciones)
         ]
         if not submodulos:
             continue

@@ -33,6 +33,9 @@ function visibleParaTipo(item, values) {
 }
 
 function campoVisibleEnFormulario(campo, values, secciones) {
+  if (campo.visibleSi && String(values?.[campo.visibleSi.campo] ?? "") !== String(campo.visibleSi.valor)) {
+    return false;
+  }
   if (!visibleParaTipo(campo, values)) return false;
   if (!secciones?.length) return true;
   const seccion = secciones.find((s) => (s.campos || []).some((c) => c.campo === campo.campo));
@@ -70,6 +73,7 @@ export default function FormPage({
   onCancel,
   onSubmit,
   createDefaults,
+  pie,
 }) {
   const mergedCreateDefaults = createDefaults ?? EMPTY_CREATE_DEFAULTS;
   const createDefaultsKey =
@@ -141,6 +145,14 @@ export default function FormPage({
       }
       if (c.control === "estudiante" && modo !== "ver" && !String(values[c.campo] ?? "").trim()) {
         next[c.campo] = "Selecciona un estudiante.";
+      }
+      if (c.control === "lineasVenta" && modo !== "ver") {
+        const lineas = Array.isArray(values[c.campo]) ? values[c.campo] : [];
+        const incompleta = lineas.length === 0 || lineas.some((linea) => {
+          const precio = String(linea?.PRECIO ?? "").trim();
+          return !String(linea?.PRODUCTO || "").trim() || precio === "" || Number(precio) < 0 || Number.isNaN(Number(precio));
+        });
+        if (incompleta) next[c.campo] = "Selecciona cada artículo e ingresa su importe.";
       }
       if (
         c.obligatorio &&
@@ -278,7 +290,7 @@ export default function FormPage({
           ),
         }))
         .filter((sec) => sec.campos.length > 0)
-    : [{ titulo: null, grupo: null, campos: (campos || []).filter((c) => filtrarCampo(c, modo)) }];
+    : [{ titulo: null, grupo: null, campos: (campos || []).filter((c) => filtrarCampo(c, modo) && campoVisibleEnFormulario(c, values, secciones)) }];
 
   const filas = [];
   bloques.forEach((bloque) => {
@@ -329,6 +341,7 @@ export default function FormPage({
               renderSeccion(fila.seccion)
             ),
           )}
+          {pie}
         </div>
 
         <div className="form-page-footer">

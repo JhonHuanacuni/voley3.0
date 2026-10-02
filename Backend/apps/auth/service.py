@@ -20,7 +20,7 @@ def validar_usuario(username, password):
     if not filas:
         return False, None, None
     fila = filas[0]
-    if str(fila.get('ESTADO') or '') != 'Activo':
+    if str(fila.get('ESTADO') or '').upper() != 'ACTIVO':
         return False, None, None
     if not _clave_valida(fila.get('CONTRA'), password):
         return False, None, None

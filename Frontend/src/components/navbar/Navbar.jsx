@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faBars, faBell, faUser } from "@fortawesome/free-solid-svg-icons";
 import PerfilModal from "../perfil/PerfilModal";
+import BuscadorGeneral from "./BuscadorGeneral";
 import { parseJsonResponse } from "../../utils/api";
 import { dbToView } from "../../utils/fecha";
 
@@ -47,7 +48,7 @@ function recortar(texto, max = 140) {
   return `${s.slice(0, max).trim()}…`;
 }
 
-const Navbar = ({ role, idusuario, onToggleSidebar, onLogout }) => {
+const Navbar = ({ role, idusuario, onChangePage, onToggleSidebar, onLogout }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPerfil, setShowPerfil] = useState(false);
@@ -105,6 +106,8 @@ const Navbar = ({ role, idusuario, onToggleSidebar, onLogout }) => {
         </div>
       </div>
 
+      <BuscadorGeneral />
+
       <div className="navbar-right">
         <div className="navbar-notify" ref={notificationsRef}>
           <button
@@ -133,7 +136,15 @@ const Navbar = ({ role, idusuario, onToggleSidebar, onLogout }) => {
               ) : (
                 <ul className="navbar-notif-list">
                   {mensajes.map((m) => (
-                    <li key={m.IDMENSAJE} className="navbar-notif-item">
+                    <li
+                      key={m.IDMENSAJE}
+                      className={`navbar-notif-item ${m.PAGINA ? "navbar-notif-item--link" : ""}`}
+                      onClick={() => {
+                        if (!m.PAGINA || !onChangePage) return;
+                        onChangePage(m.PAGINA);
+                        setShowNotifications(false);
+                      }}
+                    >
                       <div className="navbar-notif-title">{m.TITULO || "Aviso"}</div>
                       <div className="navbar-notif-author-row">
                         <span className="navbar-notif-author">

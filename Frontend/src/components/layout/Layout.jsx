@@ -29,6 +29,7 @@ const Layout = ({
         <Navbar
           role={role}
           idusuario={idusuario}
+          onChangePage={onChangePage}
           onToggleSidebar={onToggleSidebar}
           onLogout={onLogout}
         />

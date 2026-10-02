@@ -61,6 +61,7 @@ const Sidebar = ({ idusuario, activePage, onChangePage, onMenuLoaded, isOpen, on
       if (!response.ok || !data.success) {
         throw new Error(data.error || `Error al cargar menú (${response.status})`);
       }
+      if (Array.isArray(data.funciones)) guardarFunciones(data.funciones);
       setMenuItems(data.menu || []);
       onMenuLoaded?.(collectMenuPages(data.menu || []));
     } catch (err) {

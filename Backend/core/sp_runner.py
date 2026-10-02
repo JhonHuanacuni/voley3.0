@@ -52,6 +52,20 @@ def call_simple(cursor, proc, params):
     raise RuntimeError('call_simple: use rama SQL Server en el servicio')
 
 
+def call_sets(cursor, proc, params):
+    """Ejecuta CALL y devuelve todos los result sets con columnas (aunque vengan vacíos)."""
+    if is_mysql():
+        cursor.execute(f'CALL {proc}({_placeholders(len(params))})', list(params))
+        sets = []
+        while True:
+            if cursor.description:
+                sets.append(cursor_rows(cursor))
+            if not cursor.nextset():
+                break
+        return sets
+    raise RuntimeError('call_sets: use rama SQL Server en el servicio')
+
+
 def call_obtain(proc, param):
     with connection.cursor() as cursor:
         if is_mysql():

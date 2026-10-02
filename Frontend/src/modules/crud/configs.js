@@ -1,14 +1,45 @@
+import { primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+
 const MEDIOS = ["Efectivo", "Transferencia", "Tarjeta", "Yape", "Plin", "Otro"];
 const GENEROS = ["Mujer", "Hombre"];
 const CONDICIONES = ["Regular", "Becado", "1/2 beca"];
 const TALLAS = ["XS", "S", "M", "L"];
-const PRODUCTOS = ["Camiseta deportiva", "Falda short", "Short", "Medias", "Rodilleras", "Mangas", "Poleras"];
+const PRODUCTOS_FISICOS = [
+  "Camisetas",
+  "Falda short",
+  "Short",
+  "Medias deportivas",
+  "Rodilleras",
+  "Mangas",
+  "Poleras",
+  "Otros implementos deportivos",
+];
+const SERVICIOS = [
+  "Clases individuales",
+  "Otros servicios o conceptos que pueda comercializar la academia",
+];
 const ESTADOS_ALUMNA = ["Activa", "Inactiva", "Retirada"];
+const FUNCIONES_POR_DEFECTO = [
+  "REGISTRAR_ALUMNAS",
+  "REGISTRAR_MATRICULAS",
+  "REGISTRAR_MENSUALIDADES",
+  "REGISTRAR_VENTAS",
+  "EMITIR_RECIBOS",
+  "EMITIR_BOLETAS",
+  "VER_REPORTES",
+  "MODIFICAR_OPERACIONES",
+  "ANULAR_OPERACIONES",
+  "VER_SALDOS",
+  "GESTIONAR_ASISTENCIAS",
+  "VER_DASHBOARD",
+];
 
 const filtrosAlumna = [
   { key: "estado", etiqueta: "Estado", opciones: ESTADOS_ALUMNA },
   { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
   { key: "idturno", etiqueta: "Turno", catalogo: "turnos" },
+  { key: "desde", etiqueta: "Inscripción desde", tipo: "fecha" },
+  { key: "hasta", etiqueta: "Inscripción hasta", tipo: "fecha" },
 ];
 
 const columnasAlumna = [
@@ -78,6 +109,9 @@ export const alumnaConfig = {
   filtros: filtrosAlumna,
   columnas: columnasAlumna,
   secciones: seccionesAlumna,
+  traza: true,
+  acciones: ["estadoCuenta"],
+  funciones: { nuevo: ["REGISTRAR_ALUMNAS"] },
 };
 
 export const retiradasConfig = {
@@ -85,7 +119,9 @@ export const retiradasConfig = {
   titulo: "Retiradas",
   permitirNuevo: false,
   filtrosIniciales: { estado: "Retirada" },
-  filtros: filtrosAlumna.filter((f) => f.key !== "estado"),
+  filtros: filtrosAlumna
+    .filter((f) => f.key !== "estado")
+    .map((f) => (f.tipo === "fecha" ? { ...f, etiqueta: f.key === "desde" ? "Retiro desde" : "Retiro hasta" } : f)),
 };
 
 export const cicloConfig = {
@@ -129,51 +165,188 @@ export const turnoConfig = {
   ],
 };
 
+const PERIODO_ACTIVO = { campo: "PERIODO", valor: "Activo" };
+
 export const mensualidadConfig = {
   modulo: "Academia",
   titulo: "Mensualidades",
+  singular: "mensualidad",
+  femenino: true,
   entidad: "mensualidades",
   pk: "IDMENSUALIDAD",
   usaCatalogos: true,
-  placeholder: "Buscar por alumna...",
-  filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Deuda", "Completada"] }],
+  traza: true,
+  acciones: ["renovar", "estadoCuenta"],
+  funciones: { nuevo: ["REGISTRAR_MENSUALIDADES", "REGISTRAR_MATRICULAS"] },
+  placeholder: "Buscar por alumna, DNI o código...",
+  filtros: [
+    { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+    { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
+    { key: "tipo", etiqueta: "Concepto", opciones: ["Matrícula", "Mensualidad"] },
+    {
+      key: "situacion",
+      etiqueta: "Situación",
+      opciones: ["Vigente", "Pendiente", "Vencida", "Pagada", "Por iniciar", "Finalizada", "Inactivo"],
+    },
+    { key: "estado", etiqueta: "Pago", opciones: ["Deuda", "Parcial", "Completada", "Inactivo"] },
+    { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
+  ],
   columnas: [
     { campo: "ALUMNA", etiqueta: "Alumna" },
+    { campo: "TIPO", etiqueta: "Concepto" },
+    { campo: "CICLO", etiqueta: "Ciclo" },
     { campo: "FECHAINICIO", etiqueta: "Inicio", tipo: "fecha" },
     { campo: "FECHAFIN", etiqueta: "Fin", tipo: "fecha" },
-    { campo: "MONTO", etiqueta: "Monto" },
-    { campo: "SALDO", etiqueta: "Saldo" },
-    { campo: "ESTADO", etiqueta: "Estado", tipo: "estado" },
+    { campo: "MONTO", etiqueta: "Monto", tipo: "decimal" },
+    { campo: "DESCUENTO", etiqueta: "Descuento", tipo: "decimal" },
+    { campo: "PAGADO", etiqueta: "Pagado", tipo: "decimal" },
+    { campo: "SALDO", etiqueta: "Saldo", tipo: "decimal" },
+    { campo: "ESTADO", etiqueta: "Pago", tipo: "estadoPago" },
+    { campo: "SITUACION", etiqueta: "Situación", tipo: "estado" },
+    { campo: "VIGENCIA", etiqueta: "Vigencia" },
     { campo: "VENCE", etiqueta: "Restante", tipo: "diasRestantes", origen: "FECHAFIN" },
+    { campo: "REGISTRADOPOR", etiqueta: "Registrado por", tipo: "traza" },
   ],
   campos: [
     { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", catalogo: "alumnas", obligatorio: true, buscar: true },
+    {
+      campo: "PERIODO",
+      etiqueta: "Tipo de periodo",
+      control: "select",
+      opciones: ["Activo", "Inactivo"],
+      defaultValue: "Activo",
+      obligatorio: true,
+      ayuda: "Inactivo: la alumna no asistió en ese periodo. No genera deuda ni admite pagos.",
+    },
     { campo: "FECHAINICIO", etiqueta: "Inicio", control: "date", obligatorio: true },
     { campo: "FECHAFIN", etiqueta: "Fin", control: "date", obligatorio: true },
-    { campo: "MONTO", etiqueta: "Monto (S/.)", control: "number", obligatorio: true },
+    {
+      campo: "IDPROMOCION",
+      etiqueta: "Promoción o tarifa",
+      control: "select",
+      catalogo: "promociones",
+      visibleSi: PERIODO_ACTIVO,
+      ayuda: "Opcional. Con promoción, el monto se calcula según el mes de la promoción.",
+    },
+    {
+      campo: "MONTOREGULAR",
+      etiqueta: "Tarifa regular (S/.)",
+      control: "number",
+      visibleSi: PERIODO_ACTIVO,
+      ayuda: "Lo que costaría sin promoción. La diferencia con el monto queda como descuento, no como deuda.",
+    },
+    {
+      campo: "MONTO",
+      etiqueta: "Monto a cobrar (S/.)",
+      control: "number",
+      visibleSi: PERIODO_ACTIVO,
+      ayuda: "Vacío: se usa el de la promoción o la mensualidad de la alumna.",
+    },
     { campo: "NOTAS", etiqueta: "Notas", control: "textarea", full: true },
   ],
+  onFieldChange: (campo, valor, setValues, catalogos) => {
+    if (campo !== "IDPROMOCION") return;
+    const promo = (catalogos.promociones || []).find((p) => p.value === valor);
+    setValues((prev) => ({
+      ...prev,
+      MONTOREGULAR: promo ? String(promo.regular) : prev.MONTOREGULAR,
+      MONTO: "",
+    }));
+  },
 };
 
 export const pagoConfig = {
   modulo: "Academia",
   titulo: "Pagos",
+  singular: "pago",
   entidad: "pagos",
   pk: "IDPAGO",
   usaCatalogos: true,
-  placeholder: "Buscar por alumna o medio...",
+  traza: true,
+  acciones: ["estadoCuenta"],
+  funciones: { nuevo: ["EMITIR_RECIBOS"] },
+  placeholder: "Buscar por alumna, DNI o N.° de recibo...",
+  filtros: [
+    { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+    { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
+    { key: "estado", etiqueta: "Medio", opciones: MEDIOS },
+    { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
+  ],
   columnas: [
+    { campo: "IDPAGO", etiqueta: "Recibo" },
     { campo: "ALUMNA", etiqueta: "Alumna" },
+    { campo: "CICLO", etiqueta: "Ciclo" },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
-    { campo: "MONTO", etiqueta: "Monto" },
+    { campo: "PERIODO", etiqueta: "Periodo pagado" },
+    { campo: "MONTO", etiqueta: "Monto", tipo: "decimal" },
     { campo: "MEDIO", etiqueta: "Medio" },
+    { campo: "ESTADOPERIODO", etiqueta: "Estado del periodo", tipo: "estadoPago" },
+    { campo: "REGISTRADOPOR", etiqueta: "Registrado por", tipo: "traza" },
   ],
   campos: [
     { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", catalogo: "alumnas", obligatorio: true, buscar: true, limpia: ["IDMENSUALIDAD"] },
-    { campo: "IDMENSUALIDAD", etiqueta: "Mensualidad", control: "select", catalogo: "mensualidades", filtraPor: "IDALUMNA" },
+    {
+      campo: "IDMENSUALIDAD",
+      etiqueta: "Periodo que se paga",
+      control: "select",
+      catalogo: "mensualidades",
+      filtraPor: "IDALUMNA",
+      obligatorio: true,
+      ayuda: "Elige el periodo exacto. El pago no se pasa solo a otro periodo ni puede superar su saldo.",
+    },
     { campo: "FECHA", etiqueta: "Fecha", control: "date", obligatorio: true, defaultHoy: true },
     { campo: "MONTO", etiqueta: "Monto (S/.)", control: "number", obligatorio: true },
     { campo: "MEDIO", etiqueta: "Medio de pago", control: "select", opciones: MEDIOS, defaultValue: "Efectivo" },
+  ],
+};
+
+export const promocionConfig = {
+  modulo: "Administración",
+  titulo: "Promociones",
+  singular: "promoción",
+  femenino: true,
+  entidad: "promociones",
+  pk: "IDPROMOCION",
+  traza: true,
+  funciones: { nuevo: ["MODIFICAR_OPERACIONES"] },
+  placeholder: "Buscar promoción...",
+  filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Inactivo"] }],
+  columnas: [
+    { campo: "NOMBRE", etiqueta: "Promoción" },
+    { campo: "TIPO", etiqueta: "Aplica a" },
+    { campo: "MONTOREGULAR", etiqueta: "Regular", tipo: "decimal" },
+    { campo: "MONTOPROMOCIONAL", etiqueta: "Promocional", tipo: "decimal" },
+    { campo: "MESESPROMOCION", etiqueta: "Meses" },
+    { campo: "MONTOSIGUIENTES", etiqueta: "Siguientes", tipo: "decimal" },
+    { campo: "FECHAINICIO", etiqueta: "Desde", tipo: "fecha" },
+    { campo: "FECHAFIN", etiqueta: "Hasta", tipo: "fecha" },
+    { campo: "USOS", etiqueta: "Usos" },
+    { campo: "ACTIVO", etiqueta: "Estado", tipo: "estado" },
+  ],
+  secciones: [
+    {
+      titulo: "Tarifa o promoción",
+      campos: [
+        { campo: "NOMBRE", etiqueta: "Nombre", control: "text", obligatorio: true },
+        {
+          campo: "TIPO",
+          etiqueta: "Aplica a",
+          control: "select",
+          opciones: ["General", "Nueva matrícula", "Retorno"],
+          defaultValue: "General",
+          obligatorio: true,
+          ayuda: "Nueva matrícula: solo alumnas sin periodos previos. Retorno: alumnas que vuelven.",
+        },
+        { campo: "MONTOREGULAR", etiqueta: "Tarifa regular (S/.)", control: "number", obligatorio: true, ayuda: "Ejemplo: 150" },
+        { campo: "MONTOPROMOCIONAL", etiqueta: "Monto promocional (S/.)", control: "number", obligatorio: true, ayuda: "Ejemplo: 80 el primer mes" },
+        { campo: "MESESPROMOCION", etiqueta: "Número de meses con promoción", control: "number", step: "1", min: "1", defaultValue: "1" },
+        { campo: "MONTOSIGUIENTES", etiqueta: "Monto de los meses siguientes (S/.)", control: "number", ayuda: "Ejemplo: 100 desde el segundo mes. Vacío: tarifa regular." },
+        { campo: "FECHAINICIO", etiqueta: "Fecha de inicio", control: "date" },
+        { campo: "FECHAFIN", etiqueta: "Fecha de término", control: "date" },
+        { campo: "ACTIVO", etiqueta: "Estado", control: "select", opciones: ["Activo", "Inactivo"], defaultValue: "Activo" },
+        { campo: "CONDICIONES", etiqueta: "Condiciones", control: "textarea", full: true },
+      ],
+    },
   ],
 };
 
@@ -183,23 +356,95 @@ export const ventaConfig = {
   entidad: "ventas",
   pk: "IDVENTA",
   usaCatalogos: true,
-  placeholder: "Buscar por nombre o producto...",
+  boleta: true,
+  placeholder: "Buscar por N.° de recibo, nombre o producto...",
   columnas: [
+    { campo: "NUMERO", etiqueta: "Recibo" },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "NOMBRE", etiqueta: "Nombre" },
-    { campo: "PRODUCTO", etiqueta: "Producto" },
-    { campo: "TURNO", etiqueta: "Turno" },
+    { campo: "CICLO", etiqueta: "Ciclo" },
+    { campo: "PRODUCTO", etiqueta: "Producto o servicio" },
     { campo: "TALLA", etiqueta: "Talla" },
-    { campo: "PRECIO", etiqueta: "Precio" },
+    { campo: "PRECIO", etiqueta: "Total", tipo: "decimal" },
+    { campo: "PAGADO", etiqueta: "Pagado", tipo: "decimal" },
+    { campo: "SALDO", etiqueta: "Saldo", tipo: "saldoDeuda" },
     { campo: "MEDIO", etiqueta: "Medio" },
+    { campo: "ESTADO_RECIBO", etiqueta: "Estado", tipo: "estado" },
   ],
+  traza: true,
+  acciones: ["abonos", "estadoCuenta"],
+  funciones: { nuevo: ["REGISTRAR_VENTAS", "EMITIR_BOLETAS"] },
+  filtros: [
+    { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+    { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
+    { key: "estado", etiqueta: "Recibo", vacio: "Estado", opciones: ["Emitido", "Anulado", "Eliminado"] },
+    { key: "tipo", etiqueta: "Tipo", opciones: ["Producto físico", "Servicio"] },
+    { key: "producto", etiqueta: "Producto o concepto", opciones: [...PRODUCTOS_FISICOS, ...SERVICIOS] },
+    { key: "saldo", etiqueta: "Saldo", opciones: ["Con saldo", "Pagado"] },
+    { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
+  ],
+  filtrosIniciales: { desde: primerDiaMesInput(), hasta: ultimoDiaMesInput() },
+  reporteVentas: true,
+  controlRecibos: true,
   campos: [
-    { campo: "NOMBRE", etiqueta: "Nombre", control: "text", obligatorio: true },
-    { campo: "PRODUCTO", etiqueta: "Producto", control: "select", opciones: PRODUCTOS },
-    { campo: "IDTURNO", etiqueta: "Turno", control: "select", catalogo: "turnos", obligatorio: true },
-    { campo: "TALLA", etiqueta: "Talla", control: "select", opciones: TALLAS },
-    { campo: "PRECIO", etiqueta: "Precio (S/.)", control: "number", obligatorio: true },
-    { campo: "MEDIO", etiqueta: "Medio de pago", control: "select", opciones: MEDIOS, defaultValue: "Efectivo" },
+    { campo: "NOMBRE", etiqueta: "Buscar", control: "buscarNombre", catalogo: "alumnas", obligatorio: true, placeholder: "Buscar alumno" },
+    {
+      campo: "TIPO",
+      etiqueta: "Tipo",
+      control: "select",
+      opciones: ["Producto físico", "Servicio"],
+      defaultValue: "Producto físico",
+      obligatorio: true,
+      limpia: ["PRODUCTO", "TALLA", "DETALLE", "PRECIO"],
+    },
+    {
+      campo: "DETALLE",
+      etiqueta: "Artículos",
+      control: "lineasVenta",
+      full: true,
+      opciones: PRODUCTOS_FISICOS,
+      tallas: TALLAS,
+      visibleSi: { campo: "TIPO", valor: "Producto físico" },
+    },
+    {
+      campo: "PRODUCTO",
+      etiqueta: "Producto o servicio",
+      control: "sugerido",
+      dependeDe: "TIPO",
+      opcionesPor: {
+        "Producto físico": PRODUCTOS_FISICOS,
+        Servicio: SERVICIOS,
+      },
+      obligatorio: true,
+      ocultarPlaceholder: true,
+      visibleSi: { campo: "TIPO", valor: "Servicio" },
+    },
+    {
+      campo: "NOTA_SERVICIO",
+      control: "nota",
+      soloFrontend: true,
+      full: true,
+      visibleSi: { campo: "TIPO", valor: "Servicio" },
+      texto: "Se emite como comprobante. Esta venta no crea ni modifica una mensualidad.",
+    },
+    {
+      campo: "COMPROBANTE",
+      etiqueta: "Comprobante",
+      control: "text",
+      bloqueado: true,
+      soloFrontend: true,
+      soloEditar: true,
+      visibleSi: { campo: "TIPO", valor: "Servicio" },
+    },
+    { campo: "IDTURNO", etiqueta: "Turno", control: "select", catalogo: "turnos", obligatorio: true, ocultarPlaceholder: true },
+    { campo: "PRECIO", etiqueta: "Precio (S/.)", control: "number", obligatorio: true, visibleSi: { campo: "TIPO", valor: "Servicio" } },
+    { campo: "MEDIO", etiqueta: "Medio de pago", control: "select", opciones: MEDIOS, defaultValue: "Efectivo", ocultarPlaceholder: true },
+    {
+      campo: "ACUENTA",
+      etiqueta: "Pagado a cuenta (S/.)",
+      control: "number",
+      ayuda: "Vacío: pagado completo. Si paga una parte, la diferencia queda como saldo. Los pagos posteriores se registran con el botón Abonos.",
+    },
     { campo: "FECHA", etiqueta: "Fecha", control: "date", defaultHoy: true },
     { campo: "OBSERVACION", etiqueta: "Observación", control: "textarea", full: true },
   ],
@@ -211,6 +456,11 @@ export const egresoConfig = {
   entidad: "egresos",
   pk: "IDEGRESO",
   placeholder: "Buscar por concepto o proveedor...",
+  filtros: [
+    { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+    { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
+    { key: "estado", etiqueta: "Medio", opciones: MEDIOS },
+  ],
   columnas: [
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "CONCEPTO", etiqueta: "Concepto" },
@@ -234,6 +484,8 @@ export const usuarioConfig = {
   entidad: "usuarios",
   pk: "IDUSUARIO",
   usaCatalogos: true,
+  traza: true,
+  funciones: { nuevo: ["GESTIONAR_USUARIOS"], editar: ["GESTIONAR_USUARIOS"], eliminar: ["GESTIONAR_USUARIOS"] },
   placeholder: "Buscar por usuario o nombre...",
   filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Retirado"] }],
   columnas: [
@@ -262,6 +514,21 @@ export const usuarioConfig = {
         { campo: "EMAIL", etiqueta: "Email", control: "text", validacion: "email" },
       ],
     },
+    {
+      titulo: "Permisos por función",
+      soloTiposUsuario: ["1", "2"],
+      campos: [
+        {
+          campo: "FUNCIONES",
+          etiqueta: "Marca lo que este usuario puede hacer",
+          control: "checklist",
+          catalogo: "funciones",
+          full: true,
+          defaultValue: FUNCIONES_POR_DEFECTO,
+          ayuda: "El administrador siempre tiene todos los permisos.",
+        },
+      ],
+    },
   ],
 };
 
@@ -274,7 +541,16 @@ export const auditoriaConfig = {
   permitirVer: false,
   permitirEditar: false,
   permitirEliminar: false,
-  placeholder: "Buscar por tabla, usuario o detalle...",
+  placeholder: "Buscar por tabla, usuario, código o detalle...",
+  filtros: [
+    { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+    { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
+    {
+      key: "estado",
+      etiqueta: "Tabla",
+      opciones: ["ALUMNA", "MENSUALIDAD", "PAGO", "VENTA", "PROMOCION", "USUARIO", "EGRESO"],
+    },
+  ],
   columnas: [
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "HORA", etiqueta: "Hora" },

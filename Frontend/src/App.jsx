@@ -11,6 +11,7 @@ import {
   egresoConfig,
   mensualidadConfig,
   pagoConfig,
+  promocionConfig,
   retiradasConfig,
   turnoConfig,
   usuarioConfig,
@@ -18,6 +19,12 @@ import {
 } from "./modules/crud/configs";
 import AsistenciaPage from "./modules/asistencia/AsistenciaPage";
 import DashboardPage from "./modules/dashboard/DashboardPage";
+import CumpleanosPage from "./modules/gestion/CumpleanosPage";
+import DeudasPage from "./modules/gestion/DeudasPage";
+import ReportesPage from "./modules/gestion/ReportesPage";
+import EstadoCuentaModal from "./modules/gestion/EstadoCuentaModal";
+import { guardarFunciones, limpiarFunciones } from "./utils/sesion";
+import { alPedirEstadoCuenta } from "./utils/estadoCuenta";
 
 const pageContent = {
   dashboard: { title: "Dashboard", component: DashboardPage },
@@ -32,6 +39,10 @@ const pageContent = {
   egresos: { title: "Egresos", config: egresoConfig },
   usuarios: { title: "Usuarios", config: usuarioConfig },
   auditoria: { title: "Auditoría", config: auditoriaConfig },
+  promociones: { title: "Promociones", config: promocionConfig },
+  cumpleanos: { title: "Cumpleaños", component: CumpleanosPage },
+  deudas: { title: "Deudas y vencimientos", component: DeudasPage },
+  reportes: { title: "Reportes", component: ReportesPage },
 };
 
 export default function App() {
@@ -43,6 +54,9 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [estadoCuenta, setEstadoCuenta] = useState(null);
+
+  useEffect(() => alPedirEstadoCuenta(setEstadoCuenta), []);
 
   const page = pageContent[activePage] || pageContent.dashboard;
 
@@ -83,6 +97,7 @@ export default function App() {
       localStorage.setItem("idusuario", data.idusuario || username);
       localStorage.setItem("idtipousuario", String(data.idtipousuario || ""));
       localStorage.setItem("activePage", "dashboard");
+      guardarFunciones(data.funciones || []);
     } catch {
       setLoginError("No se pudo conectar con el backend");
     }
@@ -99,6 +114,8 @@ export default function App() {
     localStorage.removeItem("idusuario");
     localStorage.removeItem("idtipousuario");
     localStorage.removeItem("activePage");
+    limpiarFunciones();
+    setEstadoCuenta(null);
   };
 
   useEffect(() => {
@@ -132,7 +149,10 @@ export default function App() {
       onCloseSidebar={() => setIsSidebarOpen(false)}
       onLogout={handleLogout}
     >
-      {Vista ? <Vista role={role} idusuario={idusuario} /> : <CrudPage key={activePage} config={page.config} />}
+      {Vista
+        ? <Vista role={role} idusuario={idusuario} onChangePage={setActivePage} />
+        : <CrudPage key={activePage} config={page.config} />}
+      {estadoCuenta && <EstadoCuentaModal idAlumna={estadoCuenta} onClose={() => setEstadoCuenta(null)} />}
     </Layout>
   );
 }

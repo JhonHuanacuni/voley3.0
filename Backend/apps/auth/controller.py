@@ -28,6 +28,7 @@ def login(request):
         'role': rol,
         'idusuario': username if valido else None,
         'idtipousuario': tipo,
+        'funciones': funciones_usuario(username) if valido else [],
     })
 
 
@@ -36,6 +37,10 @@ def menu_usuario(request):
     if not idusuario:
         return JsonResponse({'success': False, 'error': 'Falta el usuario'}, status=400)
     try:
-        return JsonResponse({'success': True, 'menu': get_menu_for_user(idusuario)})
+        return JsonResponse({
+            'success': True,
+            'menu': get_menu_for_user(idusuario),
+            'funciones': funciones_usuario(idusuario),
+        })
     except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=500)

@@ -20,6 +20,10 @@ SUBMODULO_PAGE_MAP = {
     'SUB009': 'egresos',
     'SUB010': 'usuarios',
     'SUB011': 'auditoria',
+    'SUB012': 'cumpleanos',
+    'SUB013': 'deudas',
+    'SUB014': 'reportes',
+    'SUB015': 'promociones',
 }
 
 ROLE_FROM_TIPO = {

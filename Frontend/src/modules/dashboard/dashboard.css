@@ -30,15 +30,155 @@
   font-size: 1.35rem;
 }
 
-.dash-turnos {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.dash-kpi--nueva {
+  border-left: 4px solid #db2777;
 }
 
-.dash-turnos li {
+.dash-kpi--nueva svg {
+  color: #db2777;
+}
+
+.dash-matriculas {
+  margin-bottom: 16px;
+}
+
+.dash-matriculas-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dash-matriculas-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.dash-matriculas-filtros {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.dash-matriculas-filtros select {
+  height: 38px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: #fff;
+  color: var(--color-text);
+}
+
+.dash-matriculas-msg {
+  margin: 0.6rem 1rem 0;
+}
+
+.dash-matriculas-resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 1rem;
+}
+
+.dash-matriculas-cifra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.dash-matriculas-cifra strong {
+  font-size: 1.5rem;
+}
+
+.dash-matriculas-cifra--nueva {
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.dash-matriculas-cifra--mensualidad {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.dash-matriculas-tabla {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.dash-matriculas-tabla th {
+  position: sticky;
+  top: 0;
+}
+
+.dash-matriculas-vacio {
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.dash-tipo {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dash-tipo--nueva {
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.dash-tipo--mensualidad {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.dash-turnos-tabla {
+  max-height: none;
+}
+
+.dash-turnos-tabla tfoot td {
+  font-weight: 700;
+  background: #f8f9fc;
+  border-top: 2px solid var(--color-border);
+}
+
+.dash-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dash-horario {
+  white-space: nowrap;
+}
+
+.dash-barra {
+  display: inline-block;
+  vertical-align: middle;
+  width: 110px;
+  height: 8px;
+  border-radius: 999px;
+  background: #eef0f6;
+  overflow: hidden;
+}
+
+.dash-barra span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #db2777;
+}
+
+.dash-barra-texto {
+  margin-left: 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
 }

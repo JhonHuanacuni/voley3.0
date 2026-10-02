@@ -9,7 +9,7 @@ export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {
   const [buscar, setBuscar] = useState("");
   const [filtros, setFiltros] = useState(filtrosIniciales);
   const [orden, setOrden] = useState(
-    ordenInicial || { campo: pk, direccion: "ASC" },
+    ordenInicial || { campo: "", direccion: "ASC" },
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -26,9 +26,11 @@ export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {
       const params = new URLSearchParams({
         pagina: String(pagina),
         tamanio: String(tamanio),
-        ordenarPor: orden.campo,
-        direccion: orden.direccion,
       });
+      if (orden.campo) {
+        params.set("ordenarPor", orden.campo);
+        params.set("direccion", orden.direccion);
+      }
       if (buscar) params.set("buscar", buscar);
       Object.entries(filtros).forEach(([k, v]) => {
         if (v) params.set(k, v);

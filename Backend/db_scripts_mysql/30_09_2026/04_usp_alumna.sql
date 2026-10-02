@@ -8,16 +8,22 @@ DROP PROCEDURE IF EXISTS usp_alumna_eliminar;
 
 DELIMITER $$
 
+-- El rango de fechas se aplica a la inscripción; en el listado de retiradas, a la fecha de retiro.
 CREATE PROCEDURE usp_alumna_listar(
     IN p_Buscar VARCHAR(200), IN p_Estado VARCHAR(20), IN p_IdCiclo VARCHAR(50), IN p_IdTurno VARCHAR(50),
+    IN p_Desde CHAR(8), IN p_Hasta CHAR(8),
     IN p_OrdenarPor VARCHAR(50), IN p_Direccion VARCHAR(4),
     IN p_Pagina INT, IN p_Tamanio INT, OUT p_Total INT
 )
 BEGIN
     DECLARE v_off INT DEFAULT 0;
+    DECLARE v_desde DATE;
+    DECLARE v_hasta DATE;
     IF p_Pagina IS NULL OR p_Pagina < 1 THEN SET p_Pagina = 1; END IF;
-    IF p_Tamanio IS NULL OR p_Tamanio NOT IN (10, 20, 30, 50) THEN SET p_Tamanio = 10; END IF;
+    IF p_Tamanio IS NULL OR p_Tamanio < 1 THEN SET p_Tamanio = 10; END IF;
     SET v_off = (p_Pagina - 1) * p_Tamanio;
+    SET v_desde = STR_TO_DATE(NULLIF(p_Desde, ''), '%d%m%Y');
+    SET v_hasta = STR_TO_DATE(NULLIF(p_Hasta, ''), '%d%m%Y');
 
     SELECT COUNT(*) INTO p_Total
     FROM ALUMNA a
@@ -27,10 +33,12 @@ BEGIN
            OR IFNULL(a.TELAPODERADO, '') LIKE CONCAT('%', p_Buscar, '%'))
       AND (p_Estado IS NULL OR p_Estado = '' OR a.ESTADO = p_Estado)
       AND (p_IdCiclo IS NULL OR p_IdCiclo = '' OR a.IDCICLO = p_IdCiclo)
-      AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno);
+      AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)
+      AND (v_desde IS NULL OR STR_TO_DATE(NULLIF(IF(p_Estado = 'Retirada', a.FECHARETIRO, a.FECHAINSCRIPCION), ''), '%d%m%Y') >= v_desde)
+      AND (v_hasta IS NULL OR STR_TO_DATE(NULLIF(IF(p_Estado = 'Retirada', a.FECHARETIRO, a.FECHAINSCRIPCION), ''), '%d%m%Y') <= v_hasta);
 
     SELECT a.IDALUMNA, a.NOMBRE, a.DNI, a.EDAD, a.ESTADO, a.CONDICION, a.TELAPODERADO,
-           c.NOMBRE AS CICLO, t.NOMBRE AS TURNO, a.FINMENSUALIDAD
+           c.NOMBRE AS CICLO, t.NOMBRE AS TURNO, a.FINMENSUALIDAD, a.FECHAINSCRIPCION, a.FECHARETIRO
     FROM ALUMNA a
     LEFT JOIN CICLO c ON c.IDCICLO = a.IDCICLO
     LEFT JOIN TURNO t ON t.IDTURNO = a.IDTURNO
@@ -41,6 +49,8 @@ BEGIN
       AND (p_Estado IS NULL OR p_Estado = '' OR a.ESTADO = p_Estado)
       AND (p_IdCiclo IS NULL OR p_IdCiclo = '' OR a.IDCICLO = p_IdCiclo)
       AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)
+      AND (v_desde IS NULL OR STR_TO_DATE(NULLIF(IF(p_Estado = 'Retirada', a.FECHARETIRO, a.FECHAINSCRIPCION), ''), '%d%m%Y') >= v_desde)
+      AND (v_hasta IS NULL OR STR_TO_DATE(NULLIF(IF(p_Estado = 'Retirada', a.FECHARETIRO, a.FECHAINSCRIPCION), ''), '%d%m%Y') <= v_hasta)
     ORDER BY
         CASE WHEN p_Direccion = 'DESC' THEN a.NOMBRE END DESC,
         a.NOMBRE

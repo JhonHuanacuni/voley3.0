@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSearch } from "@fortawesome/free-solid-svg-icons";
 
-export default function Toolbar({ buscar, onBuscarChange, filtros = [], placeholder = "Buscar..." }) {
+export default function Toolbar({ buscar, onBuscarChange, filtros = [], placeholder = "Buscar...", accion = null }) {
   return (
     <div className="mantenedor-toolbar">
       <div className="mantenedor-search">
@@ -14,6 +14,17 @@ export default function Toolbar({ buscar, onBuscarChange, filtros = [], placehol
         />
       </div>
       {filtros.map((f) => (
+        f.tipo === "fecha" ? (
+          <label key={f.key} className="toolbar-date">
+            {f.etiqueta}
+            <input
+              type="date"
+              value={f.value || ""}
+              aria-label={f.etiqueta}
+              onChange={(e) => f.onChange(e.target.value)}
+            />
+          </label>
+        ) : (
         <select
           key={f.key}
           value={f.value || ""}
@@ -21,7 +32,7 @@ export default function Toolbar({ buscar, onBuscarChange, filtros = [], placehol
           aria-label={f.etiqueta}
         >
           <option value="">
-            {`SELECCIONAR ${String(f.etiqueta || "")
+            {f.vacio || `SELECCIONAR ${String(f.etiqueta || "")
               .replace(/[¿?]/g, "")
               .replace(/\s+/g, " ")
               .trim()
@@ -37,7 +48,9 @@ export default function Toolbar({ buscar, onBuscarChange, filtros = [], placehol
             );
           })}
         </select>
+        )
       ))}
+      {accion}
     </div>
   );
 }

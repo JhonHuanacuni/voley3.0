@@ -33,6 +33,9 @@ ORDER = [
     SCRIPTS / "04_usp_alumna.sql",
     SCRIPTS / "05_usp_mensualidad_pago.sql",
     SCRIPTS / "06_usp_operacion.sql",
+    SCRIPTS / "07_esquema_requerimientos.sql",
+    SCRIPTS / "08_usp_requerimientos.sql",
+    SCRIPTS / "09_ventas_abonos.sql",
 ]
 
 
@@ -73,7 +76,7 @@ def main() -> int:
     user = os.getenv("DB_USER", "root")
     password = os.getenv("DB_PASSWORD", "")
     print(f"Conectando a {user}@{host}:{port} ...")
-    conn = pymysql.connect(host=host, port=port, user=user, password=password, charset="utf8mb4", autocommit=True)
+    conn = pymysql.connect(host=host, port=port, user=user, password=password, charset="utf8mb4", collation="utf8mb4_unicode_ci", autocommit=True)
     try:
         with conn.cursor() as cur:
             for path in ORDER:

@@ -27,6 +27,8 @@ import {
   faUserSlash,
   faClock,
   faShirt,
+  faCakeCandles,
+  faTriangleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 
 const ICON_MAP = {
@@ -60,6 +62,8 @@ const ICON_MAP = {
   faUserSlash: faUserSlash,
   faClock: faClock,
   faShirt: faShirt,
+  faCakeCandles: faCakeCandles,
+  faTriangleExclamation: faTriangleExclamation,
 };
 
 export function resolveSidebarIcon(iconName) {

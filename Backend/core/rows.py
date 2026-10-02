@@ -11,12 +11,14 @@ def jsonable(valor):
     return valor
 
 
-def texto(valor, maximo=None):
+def texto(valor, maximo=None, mayusculas=True):
     if valor is None:
         return None
     limpio = str(valor).strip()
     if limpio == '':
         return None
+    if mayusculas:
+        limpio = limpio.upper()
     if maximo:
         return limpio[:maximo]
     return limpio

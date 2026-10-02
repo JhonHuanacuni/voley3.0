@@ -12,6 +12,7 @@ import {
   faImage,
   faListUl,
   faUserSlash,
+  faBan,
 } from "@fortawesome/free-solid-svg-icons";
 import { dbToView, diasRestantesDesdeDb, textoDiasRestantes, claseDiasRestantes } from "../../utils/fecha";
 import { resumenDiasAsistencia } from "../../utils/diasPlan";
@@ -90,8 +91,22 @@ function renderCell(col, row, index = 0, offset = 0) {
     return String(value).toUpperCase();
   }
 
+  if (col.tipo === "estadoPago") {
+    const v = String(value).toLowerCase();
+    const clase = v === "completada" ? "activo" : v === "parcial" ? "parcial" : v === "deuda" ? "vencido" : "inactivo";
+    return <span className={`badge-estado ${clase}`}>{value}</span>;
+  }
+  if (col.tipo === "traza") {
+    const [usuario, cuando] = String(value).split(" – ");
+    return (
+      <span title={`Registrado por ${value}`}>
+        {usuario}
+        {cuando && <span className="traza-linea">{cuando}</span>}
+      </span>
+    );
+  }
   if (col.tipo === "estado") {
-    const activo = ["activo", "activa", "completada", "presente"].includes(String(value).toLowerCase());
+    const activo = ["activo", "activa", "completada", "presente", "emitido"].includes(String(value).toLowerCase());
     return (
       <span className={`badge-estado ${activo ? "activo" : "inactivo"}`}>
         {value}
@@ -220,9 +235,12 @@ function renderCell(col, row, index = 0, offset = 0) {
   return String(value);
 }
 
+const esOrdenable = (col) => col.ordenable !== false && col.tipo !== "numero";
+const campoOrden = (col) => col.campoOrden || (col.tipo === "diasRestantes" ? col.origen || "FECHAFIN" : col.campo);
+
 function SortIcon({ col, orden }) {
-  if (!col.ordenable) return null;
-  if (orden.campo !== col.campo) return <FontAwesomeIcon icon={faSort} />;
+  if (!esOrdenable(col)) return null;
+  if (orden?.campo !== campoOrden(col)) return <FontAwesomeIcon icon={faSort} />;
   return (
     <FontAwesomeIcon icon={orden.direccion === "ASC" ? faSortUp : faSortDown} />
   );
@@ -246,14 +264,17 @@ export default function DataTable({
   onWhatsapp,
   onVerPagos,
   onVerMensualidades,
+  onVerBoleta,
+  onAnular,
   onReintentar,
+  accionesExtra = [],
   pagina = 1,
   tamanio = 10,
   verIcono = "eye",
   emptyMessage = "No hay registros. Crea el primero.",
 }) {
   const mostrarAcciones = Boolean(
-    onVer || onEditar || onEliminar || onRetirar || onCarnet || onResetContra || onWhatsapp || onVerPagos || onVerMensualidades,
+    onVer || onEditar || onEliminar || onRetirar || onCarnet || onResetContra || onWhatsapp || onVerPagos || onVerMensualidades || onAnular,
   );
   const offset = Math.max(0, (pagina - 1) * tamanio);
   if (loading) {
@@ -265,6 +286,7 @@ export default function DataTable({
               {columnas.map((c) => (
                 <th key={c.campo}>{c.etiqueta}</th>
               ))}
+              {onVerBoleta && <th>Ver boleta</th>}
               {mostrarAcciones && <th className="col-actions">Acciones</th>}
             </tr>
           </thead>
@@ -276,6 +298,11 @@ export default function DataTable({
                     <div className="skeleton-bar" />
                   </td>
                 ))}
+                {onVerBoleta && (
+                  <td>
+                    <div className="skeleton-bar" />
+                  </td>
+                )}
                 {mostrarAcciones && (
                   <td>
                     <div className="skeleton-bar" />
@@ -316,12 +343,14 @@ export default function DataTable({
             {columnas.map((col) => (
               <th
                 key={col.campo}
-                className={col.ordenable ? "sortable" : ""}
-                onClick={() => col.ordenable && onOrden(col.campo)}
+                className={esOrdenable(col) && onOrden ? "sortable" : ""}
+                onClick={() => esOrdenable(col) && onOrden?.(campoOrden(col))}
+                title={esOrdenable(col) && onOrden ? "Ordenar" : undefined}
               >
-                {col.etiqueta} <SortIcon col={col} orden={orden} />
+                {col.etiqueta} {onOrden && <SortIcon col={col} orden={orden} />}
               </th>
             ))}
+            {onVerBoleta && <th>Ver boleta</th>}
             {mostrarAcciones && <th className="col-actions">Acciones</th>}
           </tr>
         </thead>
@@ -331,6 +360,13 @@ export default function DataTable({
               {columnas.map((col) => (
                 <td key={col.campo}>{renderCell(col, row, index, offset)}</td>
               ))}
+              {onVerBoleta && (
+                <td>
+                  <button type="button" className="btn-boleta" onClick={() => onVerBoleta(row)}>
+                    Ver boleta
+                  </button>
+                </td>
+              )}
               {mostrarAcciones && (
                 <td className="col-actions">
                   {onVer && (
@@ -343,7 +379,7 @@ export default function DataTable({
                       <FontAwesomeIcon icon={verIcono === "image" ? faImage : faEye} />
                     </button>
                   )}
-                  {onEditar && (
+                  {onEditar && !["anulado", "eliminado"].includes(String(row.ESTADO_RECIBO || "").toLowerCase()) && (
                     <button
                       type="button"
                       className="btn-icon"
@@ -373,6 +409,19 @@ export default function DataTable({
                       <FontAwesomeIcon icon={faKey} />
                     </button>
                   )}
+                  {accionesExtra
+                    .filter((accion) => !accion.visible || accion.visible(row))
+                    .map((accion) => (
+                      <button
+                        key={accion.id}
+                        type="button"
+                        className={`btn-icon ${accion.clase || ""}`}
+                        title={accion.titulo}
+                        onClick={() => accion.onClick(row)}
+                      >
+                        <FontAwesomeIcon icon={accion.icono} />
+                      </button>
+                    ))}
                   {onWhatsapp && (
                     <button
                       type="button"
@@ -403,7 +452,7 @@ export default function DataTable({
                       <FontAwesomeIcon icon={faListUl} />
                     </button>
                   )}
-                  {onRetirar && (row[campoEstado] || "").trim() !== "Retirado" && (
+                  {onRetirar && (row[campoEstado] || "").trim().toUpperCase() !== "RETIRADO" && (
                     <button
                       type="button"
                       className="btn-icon danger"
@@ -413,11 +462,21 @@ export default function DataTable({
                       <FontAwesomeIcon icon={faUserSlash} />
                     </button>
                   )}
-                  {onEliminar && (!onRetirar || (row[campoEstado] || "").trim() === "Retirado") && (
+                  {onAnular && String(row.ESTADO_RECIBO || "").toLowerCase() === "emitido" && (
                     <button
                       type="button"
                       className="btn-icon danger"
-                      title="Eliminar permanentemente"
+                      title="Anular recibo"
+                      onClick={() => onAnular(row)}
+                    >
+                      <FontAwesomeIcon icon={faBan} />
+                    </button>
+                  )}
+                  {onEliminar && String(row.ESTADO_RECIBO || "").toLowerCase() !== "eliminado" && (!onRetirar || (row[campoEstado] || "").trim().toUpperCase() === "RETIRADO") && (
+                    <button
+                      type="button"
+                      className="btn-icon danger"
+                      title={onAnular ? "Eliminar recibo" : "Eliminar permanentemente"}
                       onClick={() => onEliminar(row)}
                     >
                       <FontAwesomeIcon icon={faTrash} />

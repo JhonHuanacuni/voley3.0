@@ -2,6 +2,8 @@ import { useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faImage, faUpload } from "@fortawesome/free-solid-svg-icons";
 import CatalogoBuscador from "./CatalogoBuscador";
+import LineasVenta from "./LineasVenta";
+import NombreBuscador from "./NombreBuscador";
 
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
 
@@ -14,6 +16,14 @@ function placeholderSelect(etiqueta) {
   return limpia ? `SELECCIONAR ${limpia}` : "SELECCIONAR";
 }
 
+function opcionesDelCampo(campo, valores, value) {
+  const base = campo.opcionesPor
+    ? (campo.opcionesPor[valores?.[campo.dependeDe]] || [])
+    : (campo.opciones || []);
+  if (value && !base.includes(value)) return [value, ...base];
+  return base;
+}
+
 export default function FieldRenderer({
   campo,
   value,
@@ -24,9 +34,88 @@ export default function FieldRenderer({
   onChange,
 }) {
   const fileRef = useRef(null);
+  if (campo.control === "nota") {
+    return <p className={`form-note ${campo.full ? "full" : ""}`}>{campo.texto}</p>;
+  }
   const className = `form-field ${campo.full ? "full" : ""} ${error ? "has-error" : ""}`;
 
   const renderControl = () => {
+    if (campo.control === "checklist") {
+      const marcados = Array.isArray(value) ? value : [];
+      const alternar = (codigo) => {
+        onChange(marcados.includes(codigo) ? marcados.filter((c) => c !== codigo) : [...marcados, codigo]);
+      };
+      return (
+        <div className="checklist">
+          {!disabled && (
+            <div className="checklist-acciones">
+              <button type="button" className="btn-link" onClick={() => onChange(catalogo.map((op) => op.value))}>
+                Marcar todo
+              </button>
+              <button type="button" className="btn-link" onClick={() => onChange([])}>
+                Quitar todo
+              </button>
+            </div>
+          )}
+          <div className="checklist-grid">
+            {catalogo.map((op) => (
+              <label key={op.value} className={`checklist-item ${marcados.includes(op.value) ? "is-marcado" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={marcados.includes(op.value)}
+                  disabled={disabled}
+                  onChange={() => alternar(op.value)}
+                />
+                <span>{op.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    if (campo.control === "lineasVenta") {
+      return (
+        <LineasVenta
+          value={value}
+          productos={campo.opciones || []}
+          tallas={campo.tallas || []}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      );
+    }
+    if (campo.control === "buscarNombre") {
+      return (
+        <NombreBuscador
+          value={value}
+          opciones={catalogo}
+          disabled={disabled}
+          placeholder={campo.placeholder}
+          onChange={onChange}
+        />
+      );
+    }
+    if (campo.control === "sugerido") {
+      const lista = `sugerencias-${campo.campo}`;
+      return (
+        <>
+          <input
+            type="text"
+            list={lista}
+            value={value}
+            disabled={disabled}
+            maxLength={150}
+            placeholder={campo.placeholder || "Escribe o elige de la lista"}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <datalist id={lista}>
+            {opcionesDelCampo(campo, valores, "").map((op) => (
+              <option key={op} value={op} />
+            ))}
+          </datalist>
+        </>
+      );
+    }
     if (campo.control === "select" && campo.catalogo) {
       const referencia = campo.filtraPor ? valores?.[campo.filtraPor] : null;
       const opciones = campo.filtraPor
@@ -45,7 +134,9 @@ export default function FieldRenderer({
       }
       return (
         <select value={value} disabled={disabled || (campo.filtraPor && !referencia)} onChange={(e) => onChange(e.target.value)}>
-          <option value="">{campo.filtraPor && !referencia ? "SELECCIONA UNA ALUMNA" : placeholderSelect(campo.etiqueta)}</option>
+          <option value="" hidden={Boolean(campo.ocultarPlaceholder)}>
+            {campo.filtraPor && !referencia ? "SELECCIONA UNA ALUMNA" : placeholderSelect(campo.etiqueta)}
+          </option>
           {opciones.map((op) => (
             <option key={op.value} value={op.value}>
               {op.label}
@@ -57,8 +148,12 @@ export default function FieldRenderer({
     if (campo.control === "select") {
       return (
         <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-          {!campo.obligatorio && <option value="">{placeholderSelect(campo.etiqueta)}</option>}
-          {(campo.opciones || []).map((op) => (
+          {(!campo.obligatorio || campo.ocultarPlaceholder) && (
+            <option value="" hidden={Boolean(campo.ocultarPlaceholder)}>
+              {placeholderSelect(campo.etiqueta)}
+            </option>
+          )}
+          {opcionesDelCampo(campo, valores, value).map((op) => (
             <option key={op} value={op}>
               {op}
             </option>
@@ -70,9 +165,10 @@ export default function FieldRenderer({
       return (
         <textarea
           rows={campo.rows || 3}
+          className="input-mayusculas"
           value={value}
           disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
         />
       );
     }
@@ -161,10 +257,16 @@ export default function FieldRenderer({
         step={campo.control === "number" ? (campo.step ?? "0.01") : undefined}
         min={campo.control === "number" ? (campo.min ?? "0") : undefined}
         max={campo.control === "number" ? campo.max : undefined}
-        className={campo.mayusculas ? "input-mayusculas" : undefined}
+        className={campo.control === "text" || campo.control == null ? "input-mayusculas" : undefined}
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(campo.mayusculas ? e.target.value.toUpperCase() : e.target.value)}
+        onChange={(e) =>
+          onChange(
+            campo.control === "password" || campo.control === "date" || campo.control === "time" || campo.control === "number"
+              ? e.target.value
+              : e.target.value.toUpperCase()
+          )
+        }
       />
     );
   };

@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileExcel, faFileInvoiceDollar, faFilePdf, faHandHoldingDollar, faRotate } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
-import { dbToTexto } from "../../utils/fecha";
+import { dbToTexto, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+import { descargarReporteVentas } from "../../utils/reporteVentas";
+import { alCambiarFunciones, puede } from "../../utils/sesion";
+import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
+import TrazabilidadPanel from "../../components/mantenedor/TrazabilidadPanel";
 import { useCrud } from "../../hooks/useCrud";
 import PageHeader from "../../components/mantenedor/PageHeader";
 import Toolbar from "../../components/mantenedor/Toolbar";
@@ -9,7 +15,10 @@ import Pagination from "../../components/mantenedor/Pagination";
 import FormPage from "../../components/mantenedor/FormPage";
 import FormModal from "../../components/mantenedor/FormModal";
 import ConfirmDialog from "../../components/mantenedor/ConfirmDialog";
+import BoletaVenta from "../../components/mantenedor/BoletaVenta";
+import ControlRecibos from "../../components/mantenedor/ControlRecibos";
 import Toast from "../../components/mantenedor/feedback/Toast";
+import AbonosVentaModal from "../gestion/AbonosVentaModal";
 import "../../styles/mantenedor.css";
 
 export default function CrudPage({ config }) {
@@ -26,6 +35,18 @@ export default function CrudPage({ config }) {
   const [toast, setToast] = useState(null);
   const [catalogos, setCatalogos] = useState({});
   const [confirmando, setConfirmando] = useState(false);
+  const [boleta, setBoleta] = useState(null);
+  const [controlVersion, setControlVersion] = useState(0);
+  const [descargando, setDescargando] = useState(false);
+  const [abonosVenta, setAbonosVenta] = useState(null);
+  const [, setVersionFunciones] = useState(0);
+
+  useEffect(() => alCambiarFunciones(() => setVersionFunciones((v) => v + 1)), []);
+
+  const funcionesCfg = cfg.funciones || {};
+  const puedeNuevo = cfg.permitirNuevo !== false && puede(...(funcionesCfg.nuevo || []));
+  const puedeEditar = cfg.permitirEditar !== false && puede(...(funcionesCfg.editar || ["MODIFICAR_OPERACIONES"]));
+  const puedeEliminar = cfg.permitirEliminar !== false && puede(...(funcionesCfg.eliminar || ["ANULAR_OPERACIONES"]));
 
   useEffect(() => {
     if (!cfg.usaCatalogos) return;
@@ -38,7 +59,9 @@ export default function CrudPage({ config }) {
         if (Array.isArray(dataCatalogos.mensualidades)) {
           dataCatalogos.mensualidades = dataCatalogos.mensualidades.map((item) => ({
             ...item,
-            label: `${item.nombre} (${dbToTexto(item.inicio)} - ${dbToTexto(item.fin)})`,
+            label: `${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · ${item.estado}${
+              item.saldo > 0 ? ` · saldo S/ ${Number(item.saldo).toFixed(2)}` : ""
+            }`,
           }));
         }
         setCatalogos(dataCatalogos);
@@ -82,11 +105,21 @@ export default function CrudPage({ config }) {
     }
   };
 
+  const abrirBoleta = async (row) => {
+    try {
+      const detalle = await crud.obtener(row[cfg.pk]);
+      setBoleta({ ...row, ...detalle, TURNO: row.TURNO || detalle.TURNO });
+    } catch {
+      setBoleta(row);
+    }
+  };
+
   const guardar = async (payload) => {
     const mensaje = modo === "crear"
       ? await crud.insertar(payload)
       : await crud.actualizar(crud.registro[cfg.pk], payload);
     setToast({ mensaje, tipo: "success" });
+    setControlVersion((valor) => valor + 1);
     volverLista();
   };
 
@@ -94,9 +127,14 @@ export default function CrudPage({ config }) {
     if (!confirm) return;
     setConfirmando(true);
     try {
-      const mensaje = await crud.eliminar(confirm.id);
+      const mensaje = confirm.tipo === "anular"
+        ? await anularRecibo(confirm.id)
+        : confirm.tipo === "renovar"
+          ? await renovarPeriodo(confirm.id)
+          : await crud.eliminar(confirm.id);
       setToast({ mensaje, tipo: "success" });
       setConfirm(null);
+      setControlVersion((valor) => valor + 1);
       crud.listar();
     } catch (err) {
       setToast({ mensaje: err.message, tipo: "error" });
@@ -105,16 +143,141 @@ export default function CrudPage({ config }) {
     }
   };
 
+  const anularRecibo = async (id) => {
+    const res = await fetch(`/api/ventas/${encodeURIComponent(id)}/anular/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-IdUsuario": localStorage.getItem("idusuario") || "",
+      },
+    });
+    const data = await parseJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "No se pudo anular");
+    return data.mensaje;
+  };
+
+  const renovarPeriodo = async (id) => {
+    const res = await fetch(`/api/mensualidades/${encodeURIComponent(id)}/renovar/`, { method: "POST" });
+    const data = await parseJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "No se pudo generar el periodo siguiente");
+    return data.mensaje;
+  };
+
+  const accionesExtra = (cfg.acciones || [])
+    .map((accion) => {
+      if (accion === "renovar") {
+        if (!puede("REGISTRAR_MENSUALIDADES")) return null;
+        return {
+          id: "renovar",
+          icono: faRotate,
+          titulo: "Generar el periodo siguiente",
+          visible: (row) => row.ESTADO !== "Inactivo",
+          onClick: (row) => setConfirm({
+            tipo: "renovar",
+            id: row[cfg.pk],
+            nombre: `${row.ALUMNA} (${dbToTexto(row.FECHAINICIO)} al ${dbToTexto(row.FECHAFIN)})`,
+          }),
+        };
+      }
+      if (accion === "abonos") {
+        return {
+          id: "abonos",
+          icono: faHandHoldingDollar,
+          titulo: "Abonos y saldo",
+          onClick: (row) => setAbonosVenta(row[cfg.pk]),
+        };
+      }
+      if (accion === "estadoCuenta") {
+        return {
+          id: "estadoCuenta",
+          icono: faFileInvoiceDollar,
+          titulo: "Estado de cuenta",
+          onClick: (row) => abrirEstadoCuenta(row.IDALUMNA),
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  const textosConfirmacion = () => {
+    if (!confirm) return { titulo: "", mensaje: "", boton: "" };
+    if (confirm.tipo === "anular") {
+      return {
+        titulo: "Anular recibo",
+        mensaje: `¿Anular el recibo ${confirm.nombre}? El número se conserva y no se vuelve a usar.`,
+        boton: "Anular",
+      };
+    }
+    if (confirm.tipo === "renovar") {
+      return {
+        titulo: "Generar periodo siguiente",
+        mensaje: `Se creará el periodo que sigue a ${confirm.nombre}. Si tiene promoción, el monto sale de la promoción.`,
+        boton: "Generar",
+      };
+    }
+    return {
+      titulo: "Eliminar registro",
+      mensaje: cfg.controlRecibos
+        ? `¿Eliminar el recibo ${confirm.nombre}? Queda registrado quién lo eliminó y el número no se reutiliza.`
+        : `¿Eliminar ${confirm.nombre}?`,
+      boton: "Eliminar",
+    };
+  };
+
   const tituloForm = modo === "crear"
-    ? `Nuevo ${cfg.singular || cfg.titulo.toLowerCase()}`
+    ? `${cfg.femenino ? "Nueva" : "Nuevo"} ${cfg.singular || cfg.titulo.toLowerCase()}`
     : modo === "editar"
       ? `Editar ${cfg.singular || cfg.titulo.toLowerCase()}`
       : `Ver ${cfg.singular || cfg.titulo.toLowerCase()}`;
 
+  const periodoReporte = () => {
+    const desde = crud.filtros.desde || primerDiaMesInput();
+    const hasta = crud.filtros.hasta || ultimoDiaMesInput();
+    const vista = (fecha) => {
+      const partes = String(fecha || "").split("-");
+      return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : "";
+    };
+    return { desde, hasta, texto: `${vista(desde)} al ${vista(hasta)}` };
+  };
+
+  const descargarReporte = async (formato) => {
+    const { desde, hasta } = periodoReporte();
+    if (!crud.filtros.desde) crud.setFiltro("desde", desde);
+    if (!crud.filtros.hasta) crud.setFiltro("hasta", hasta);
+    if (desde > hasta) {
+      setToast({ mensaje: "La fecha desde tiene que ser anterior o igual a la fecha hasta.", tipo: "error" });
+      return;
+    }
+    setDescargando(true);
+    try {
+      const cantidad = await descargarReporteVentas({
+        desde,
+        hasta,
+        estado: crud.filtros.estado || "",
+        buscar: crud.buscar || "",
+        extras: {
+          idciclo: crud.filtros.idciclo,
+          tipo: crud.filtros.tipo,
+          producto: crud.filtros.producto,
+          saldo: crud.filtros.saldo,
+        },
+        formato,
+      });
+      const archivo = formato === "pdf" ? "PDF" : "Excel";
+      setToast({ mensaje: `${archivo} descargado con ${cantidad} ventas del periodo revisado.`, tipo: "success" });
+    } catch (err) {
+      setToast({ mensaje: err.message, tipo: "error" });
+    } finally {
+      setDescargando(false);
+    }
+  };
+
   const filtros = (cfg.filtros || []).map((filtro) => ({
     key: filtro.key,
     etiqueta: filtro.etiqueta,
+    tipo: filtro.tipo,
     value: crud.filtros[filtro.key] || "",
+    vacio: filtro.vacio,
     opciones: filtro.catalogo ? (catalogos[filtro.catalogo] || []) : filtro.opciones,
     onChange: (valor) => crud.setFiltro(filtro.key, valor),
   }));
@@ -133,6 +296,12 @@ export default function CrudPage({ config }) {
           catalogos={catalogos}
           onCancel={volverLista}
           onSubmit={guardar}
+          onFieldChange={cfg.onFieldChange
+            ? (campo, valor, setValues) => cfg.onFieldChange(campo, valor, setValues, catalogos)
+            : undefined}
+          pie={cfg.traza && modo !== "crear" && crud.registro
+            ? <TrazabilidadPanel entidad={cfg.entidad} id={crud.registro[cfg.pk]} />
+            : null}
         />
         {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
       </>
@@ -144,8 +313,8 @@ export default function CrudPage({ config }) {
       <PageHeader
         modulo={cfg.modulo}
         vista={cfg.titulo}
-        onNuevo={cfg.permitirNuevo === false ? undefined : abrirCrear}
-        mostrarNuevo={cfg.permitirNuevo !== false}
+        onNuevo={puedeNuevo ? abrirCrear : undefined}
+        mostrarNuevo={puedeNuevo}
       />
       <div className="mantenedor-card">
         <Toolbar
@@ -154,6 +323,27 @@ export default function CrudPage({ config }) {
           filtros={filtros}
           placeholder={cfg.placeholder || "Buscar..."}
         />
+        {cfg.reporteVentas && (
+          <div className="vista-previa-reporte">
+            <p>
+              {crud.loading
+                ? "Actualizando la vista previa..."
+                : crud.total
+                  ? `Vista previa: ${crud.total} ventas del ${periodoReporte().texto}${crud.filtros.estado ? `, estado ${crud.filtros.estado}` : ""}. Revisa la lista y después descarga.`
+                  : `Vista previa: no hay ventas del ${periodoReporte().texto}.`}
+            </p>
+            <div className="toolbar-reporte-grupo">
+              <button type="button" className="btn-primary toolbar-reporte" disabled={descargando || crud.loading || crud.total === 0} onClick={() => descargarReporte("excel")}>
+                <FontAwesomeIcon icon={faFileExcel} />
+                Excel
+              </button>
+              <button type="button" className="btn-secondary toolbar-reporte" disabled={descargando || crud.loading || crud.total === 0} onClick={() => descargarReporte("pdf")}>
+                <FontAwesomeIcon icon={faFilePdf} />
+                PDF
+              </button>
+            </div>
+          </div>
+        )}
         {crud.error && <p className="field-error">{crud.error}</p>}
         <DataTable
           columnas={cfg.columnas}
@@ -163,10 +353,18 @@ export default function CrudPage({ config }) {
           loading={crud.loading}
           onOrden={crud.toggleOrden}
           onVer={cfg.permitirVer === false ? undefined : abrirVer}
-          onEditar={cfg.permitirEditar === false ? undefined : abrirEditar}
-          onEliminar={cfg.permitirEliminar === false ? undefined : ((row) => setConfirm({
+          onVerBoleta={cfg.boleta ? abrirBoleta : undefined}
+          onAnular={cfg.controlRecibos && puede("ANULAR_OPERACIONES") ? ((row) => setConfirm({
+            tipo: "anular",
             id: row[cfg.pk],
-            nombre: row.NOMBRE || row.CONCEPTO || row.ALUMNA || row[cfg.pk],
+            nombre: row.NUMERO || row[cfg.pk],
+          })) : undefined}
+          accionesExtra={accionesExtra}
+          onEditar={puedeEditar ? abrirEditar : undefined}
+          onEliminar={!puedeEliminar ? undefined : ((row) => setConfirm({
+            tipo: "eliminar",
+            id: row[cfg.pk],
+            nombre: row.NUMERO || row.NOMBRE || row.CONCEPTO || row.ALUMNA || row[cfg.pk],
           }))}
           onWhatsapp={cfg.whatsapp ? (row) => {
             const digits = String(row[cfg.whatsapp] || "").replace(/\D/g, "");
@@ -185,11 +383,13 @@ export default function CrudPage({ config }) {
           tamanios={cfg.tamanios}
           onTamanioChange={crud.setTamanio}
         />
+        {cfg.controlRecibos && <ControlRecibos version={controlVersion} />}
       </div>
       <ConfirmDialog
         abierto={Boolean(confirm)}
-        titulo="Eliminar registro"
-        mensaje={confirm ? `¿Eliminar ${confirm.nombre}?` : ""}
+        titulo={textosConfirmacion().titulo}
+        mensaje={textosConfirmacion().mensaje}
+        confirmLabel={textosConfirmacion().boton}
         confirmando={confirmando}
         onCancel={() => setConfirm(null)}
         onConfirm={confirmarEliminar}
@@ -207,6 +407,17 @@ export default function CrudPage({ config }) {
           onSubmit={guardar}
         />
       )}
+      {abonosVenta && (
+        <AbonosVentaModal
+          idVenta={abonosVenta}
+          onClose={() => setAbonosVenta(null)}
+          onCambio={() => {
+            crud.listar();
+            setControlVersion((valor) => valor + 1);
+          }}
+        />
+      )}
+      {boleta && <BoletaVenta venta={boleta} onClose={() => setBoleta(null)} />}
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
     </div>
   );
