@@ -5,6 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.auth.service import validar_usuario
 from apps.menu_service import get_menu_for_user
+from apps.permisos import funciones_usuario
 
 
 @csrf_exempt

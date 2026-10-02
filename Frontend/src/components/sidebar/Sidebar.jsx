@@ -5,6 +5,7 @@ import SidebarSection from "./SidebarSection";
 import SidebarSubLink from "./SidebarSubLink";
 import { resolveSidebarIcon } from "./sidebarIcons";
 import { etiquetaMenu } from "../../utils/etiquetasVista";
+import { guardarFunciones } from "../../utils/sesion";
 import logoImg from "../../images/logo.png";
 
 const MENU_REFRESH_EVENT = "academia:menu-refresh";
