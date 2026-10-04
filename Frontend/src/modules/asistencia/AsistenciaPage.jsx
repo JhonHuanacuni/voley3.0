@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSearch, faSort, faSortDown, faSortUp } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
@@ -48,30 +48,45 @@ export default function AsistenciaPage() {
     })();
   }, []);
 
-  const cargar = async (fechaValor, turnoValor) => {
+  const consulta = buscar.trim();
+  const busquedaSp = consulta.length >= 3 ? consulta : "";
+  const [busquedaAplicada, setBusquedaAplicada] = useState("");
+
+  useEffect(() => {
+    const espera = setTimeout(() => setBusquedaAplicada(busquedaSp), 350);
+    return () => clearTimeout(espera);
+  }, [busquedaSp]);
+
+  const pedidoActual = useRef(0);
+
+  const cargar = async (fechaValor, turnoValor, buscarValor) => {
     const fechaDb = inputToDb(fechaValor);
     if (!fechaDb) return;
+    const pedido = ++pedidoActual.current;
     setCargando(true);
     setError("");
     const params = new URLSearchParams({ fecha: fechaDb });
     if (turnoValor) params.set("idturno", turnoValor);
+    if (buscarValor) params.set("buscar", buscarValor);
     try {
       const res = await fetch(`/api/asistencia/dia/?${params}`);
       const data = await parseJsonResponse(res);
+      if (pedido !== pedidoActual.current) return;
       if (!res.ok) throw new Error(data.error || "No se pudo cargar la asistencia");
       setFilas(data.data || []);
     } catch (err) {
+      if (pedido !== pedidoActual.current) return;
       setError(err.message);
       setFilas([]);
     } finally {
-      setCargando(false);
+      if (pedido === pedidoActual.current) setCargando(false);
     }
   };
 
   useEffect(() => {
     if (turno === null) return;
-    cargar(fecha, turno);
-  }, [fecha, turno]);
+    cargar(fecha, turno, busquedaAplicada);
+  }, [fecha, turno, busquedaAplicada]);
 
   const marcar = async (idalumna, estado) => {
     setAviso("");
@@ -91,16 +106,12 @@ export default function AsistenciaPage() {
     }
   };
 
-  const consulta = buscar.trim().toLowerCase();
-  const visibles = useMemo(() => {
-    const base = consulta.length < 3
-      ? filas
-      : filas.filter((fila) => String(fila.NOMBRE || "").toLowerCase().includes(consulta));
-    return [...base].sort((a, b) => {
+  const visibles = useMemo(() => (
+    [...filas].sort((a, b) => {
       const cmp = valorOrden(a, orden.campo).localeCompare(valorOrden(b, orden.campo), "es", { sensitivity: "base" });
       return orden.direccion === "ASC" ? cmp : -cmp;
-    });
-  }, [filas, consulta, orden]);
+    })
+  ), [filas, orden]);
 
   const toggleOrden = (campo) => {
     setOrden((prev) => ({

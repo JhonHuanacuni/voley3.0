@@ -1,21 +1,43 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { buscarAlumnasCombo } from "../../../utils/combos";
 
 export default function CatalogoBuscador({
   value,
-  opciones = [],
   placeholder = "Escriba para buscar...",
   disabled,
   onChange,
 }) {
   const raiz = useRef(null);
+  const pedidoActual = useRef(0);
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
+  const [conocida, setConocida] = useState({ value: "", label: "" });
+  const [valorPrevio, setValorPrevio] = useState(value);
+  const [opciones, setOpciones] = useState([]);
+  const [buscando, setBuscando] = useState(false);
 
-  const seleccionado = opciones.find((op) => op.value === value);
+  if (value !== valorPrevio) {
+    setValorPrevio(value);
+    if (!value) setTexto("");
+  }
+
+  const etiqueta = value && conocida.value === value ? conocida.label : "";
 
   useEffect(() => {
-    setTexto(seleccionado?.label || "");
-  }, [seleccionado?.label, value]);
+    if (!value || conocida.value === value) return undefined;
+    let vigente = true;
+    buscarAlumnasCombo({ id: value, limite: 1 })
+      .then((lista) => {
+        if (!vigente) return;
+        const nombre = lista[0]?.label || "";
+        setConocida({ value, label: nombre });
+        setTexto(nombre);
+      })
+      .catch(() => {});
+    return () => {
+      vigente = false;
+    };
+  }, [value, conocida.value]);
 
   useEffect(() => {
     const cerrar = (event) => {
@@ -25,15 +47,29 @@ export default function CatalogoBuscador({
     return () => document.removeEventListener("mousedown", cerrar);
   }, []);
 
-  const consulta = texto.trim().toLowerCase();
-  const visibles = useMemo(() => {
-    if (!abierto) return [];
-    if (!consulta || consulta === String(seleccionado?.label || "").toLowerCase()) return opciones;
-    return opciones.filter((op) => String(op.label || "").toLowerCase().includes(consulta));
-  }, [abierto, consulta, opciones, seleccionado?.label]);
+  const consulta = texto.trim();
+  const filtro = consulta === etiqueta ? "" : consulta;
+
+  useEffect(() => {
+    if (!abierto || disabled) return undefined;
+    const espera = setTimeout(async () => {
+      const pedido = ++pedidoActual.current;
+      setBuscando(true);
+      try {
+        const lista = await buscarAlumnasCombo({ q: filtro });
+        if (pedido === pedidoActual.current) setOpciones(lista);
+      } catch {
+        if (pedido === pedidoActual.current) setOpciones([]);
+      } finally {
+        if (pedido === pedidoActual.current) setBuscando(false);
+      }
+    }, 300);
+    return () => clearTimeout(espera);
+  }, [abierto, filtro, disabled]);
 
   const elegir = (opcion) => {
     onChange(opcion.value);
+    setConocida({ value: opcion.value, label: opcion.label });
     setTexto(opcion.label);
     setAbierto(false);
   };
@@ -53,16 +89,16 @@ export default function CatalogoBuscador({
           if (!siguiente.trim()) onChange("");
         }}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && abierto && visibles[0]) {
+          if (event.key === "Enter" && abierto && opciones[0]) {
             event.preventDefault();
-            elegir(visibles[0]);
+            elegir(opciones[0]);
           }
           if (event.key === "Escape") setAbierto(false);
         }}
       />
       {abierto && !disabled && (
         <div className="catalogo-buscador-lista" role="listbox">
-          {visibles.length ? visibles.map((op) => (
+          {opciones.length ? opciones.map((op) => (
             <button
               key={op.value}
               type="button"
@@ -73,7 +109,7 @@ export default function CatalogoBuscador({
               {op.label}
             </button>
           )) : (
-            <p>Sin coincidencias</p>
+            <p>{buscando ? "Buscando..." : "Sin coincidencias"}</p>
           )}
         </div>
       )}

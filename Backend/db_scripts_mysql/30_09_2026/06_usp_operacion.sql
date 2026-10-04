@@ -24,8 +24,11 @@ DROP PROCEDURE IF EXISTS usp_auditoria_insertar;
 
 DELIMITER $$
 
-CREATE PROCEDURE usp_asistencia_dia(IN p_Fecha CHAR(8), IN p_IdTurno VARCHAR(50))
+-- p_Buscar filtra por nombre solo desde 3 letras.
+CREATE PROCEDURE usp_asistencia_dia(IN p_Fecha CHAR(8), IN p_IdTurno VARCHAR(50), IN p_Buscar VARCHAR(100))
 BEGIN
+    DECLARE v_buscar VARCHAR(100);
+    SET v_buscar = TRIM(IFNULL(p_Buscar, ''));
     SELECT a.IDALUMNA, a.NOMBRE, IFNULL(s.ESTADO, '') AS ESTADO, s.IDASISTENCIA,
            t.NOMBRE AS TURNO
     FROM ALUMNA a
@@ -33,6 +36,7 @@ BEGIN
     LEFT JOIN ASISTENCIA s ON s.IDALUMNA = a.IDALUMNA AND s.FECHA = p_Fecha
     WHERE a.ESTADO = 'Activa'
       AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)
+      AND (CHAR_LENGTH(v_buscar) < 3 OR a.NOMBRE LIKE CONCAT('%', v_buscar, '%'))
     ORDER BY a.NOMBRE;
 END$$
 
@@ -336,7 +340,6 @@ proc: BEGIN
            ACUENTA = IF(p_ACuenta IS NULL OR p_ACuenta < 0, NULL, LEAST(p_ACuenta, PRECIO))
      WHERE IDVENTA = v_id;
     CALL usp_venta_abono_sincronizar(v_id, v_usuario);
-    CALL usp_auditoria_insertar('VENTA', v_id, 'Emitido', v_usuario, CONCAT('Recibo ', IFNULL(v_cmp, v_id)), @_aud_r, @_aud_m);
     SET p_Resultado = 1;
     IF v_tipo = 'Servicio' THEN
         SET p_Mensaje = CONCAT('Comprobante ', v_cmp, ' emitido. No se creó ni modificó ninguna mensualidad.');
@@ -395,7 +398,6 @@ proc: BEGIN
            HORA_MODIFICACION = DATE_FORMAT(NOW(), '%H:%i:%s')
      WHERE IDVENTA = p_Id;
     CALL usp_venta_abono_sincronizar(p_Id, v_usuario);
-    CALL usp_auditoria_insertar('VENTA', p_Id, 'Modificado', v_usuario, CONCAT('Recibo ', IFNULL(v_cmp, p_Id)), @_aud_r, @_aud_m);
     SET p_Resultado = 1;
     IF v_tipo = 'Servicio' THEN
         SET p_Mensaje = CONCAT('Comprobante ', v_cmp, ' actualizado. No se modificó ninguna mensualidad.');
@@ -426,7 +428,6 @@ proc: BEGIN
            FECHA_ANULACION = DATE_FORMAT(NOW(), '%d%m%Y'),
            HORA_ANULACION = DATE_FORMAT(NOW(), '%H:%i:%s')
      WHERE IDVENTA = p_Id;
-    CALL usp_auditoria_insertar('VENTA', p_Id, 'Anulado', v_usuario, CONCAT('Recibo ', v_numero), @_aud_r, @_aud_m);
     SET p_Resultado = 1;
     SET p_Mensaje = CONCAT('Recibo ', v_numero, ' anulado. El número se conserva.');
 END$$
@@ -453,7 +454,6 @@ proc: BEGIN
            FECHA_ELIMINACION = DATE_FORMAT(NOW(), '%d%m%Y'),
            HORA_ELIMINACION = DATE_FORMAT(NOW(), '%H:%i:%s')
      WHERE IDVENTA = p_Id;
-    CALL usp_auditoria_insertar('VENTA', p_Id, 'Eliminado', v_usuario, CONCAT('Recibo ', v_numero), @_aud_r, @_aud_m);
     SET p_Resultado = 1;
     SET p_Mensaje = CONCAT('Recibo ', v_numero, ' eliminado. El número no se vuelve a usar.');
 END$$
@@ -546,58 +546,6 @@ CREATE PROCEDURE usp_egreso_eliminar(IN p_Id VARCHAR(50), OUT p_Resultado INT, O
 BEGIN
     DELETE FROM EGRESO WHERE IDEGRESO = p_Id;
     SET p_Resultado = 1; SET p_Mensaje = 'Egreso eliminado.';
-END$$
-
--- p_Estado filtra por tabla (módulo).
-CREATE PROCEDURE usp_auditoria_listar(
-    IN p_Buscar VARCHAR(200), IN p_Estado VARCHAR(20),
-    IN p_Desde CHAR(8), IN p_Hasta CHAR(8),
-    IN p_OrdenarPor VARCHAR(50), IN p_Direccion VARCHAR(4),
-    IN p_Pagina INT, IN p_Tamanio INT, OUT p_Total INT
-)
-BEGIN
-    DECLARE v_off INT DEFAULT 0;
-    DECLARE v_desde DATE;
-    DECLARE v_hasta DATE;
-    IF p_Pagina IS NULL OR p_Pagina < 1 THEN SET p_Pagina = 1; END IF;
-    IF p_Tamanio IS NULL OR p_Tamanio < 1 THEN SET p_Tamanio = 10; END IF;
-    SET v_off = (p_Pagina - 1) * p_Tamanio;
-    SET v_desde = STR_TO_DATE(NULLIF(p_Desde, ''), '%d%m%Y');
-    SET v_hasta = STR_TO_DATE(NULLIF(p_Hasta, ''), '%d%m%Y');
-    SELECT COUNT(*) INTO p_Total FROM AUDITORIA
-    WHERE (p_Buscar IS NULL OR p_Buscar = '' OR TABLA LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(IDUSUARIO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(IDREGISTRO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(DETALLE, '') LIKE CONCAT('%', p_Buscar, '%'))
-      AND (p_Estado IS NULL OR p_Estado = '' OR TABLA = p_Estado)
-      AND (v_desde IS NULL OR STR_TO_DATE(FECHA, '%d%m%Y') >= v_desde)
-      AND (v_hasta IS NULL OR STR_TO_DATE(FECHA, '%d%m%Y') <= v_hasta);
-    SELECT IDAUDITORIA, TABLA, IDREGISTRO, ACCION, IDUSUARIO, FECHA, HORA, DETALLE
-    FROM AUDITORIA
-    WHERE (p_Buscar IS NULL OR p_Buscar = '' OR TABLA LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(IDUSUARIO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(IDREGISTRO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(DETALLE, '') LIKE CONCAT('%', p_Buscar, '%'))
-      AND (p_Estado IS NULL OR p_Estado = '' OR TABLA = p_Estado)
-      AND (v_desde IS NULL OR STR_TO_DATE(FECHA, '%d%m%Y') >= v_desde)
-      AND (v_hasta IS NULL OR STR_TO_DATE(FECHA, '%d%m%Y') <= v_hasta)
-    ORDER BY IDAUDITORIA DESC
-    LIMIT v_off, p_Tamanio;
-END$$
-
-CREATE PROCEDURE usp_auditoria_insertar(
-    IN p_Tabla VARCHAR(100), IN p_IdRegistro VARCHAR(50), IN p_Accion VARCHAR(20),
-    IN p_IdUsuario VARCHAR(50), IN p_Detalle VARCHAR(500),
-    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
-)
-BEGIN
-    DECLARE v_id VARCHAR(50);
-    SELECT CONCAT('AUD', LPAD(IFNULL(MAX(CAST(SUBSTRING(IDAUDITORIA, 4) AS UNSIGNED)), 0) + 1, 6, '0'))
-      INTO v_id FROM AUDITORIA;
-    INSERT INTO AUDITORIA (IDAUDITORIA, TABLA, IDREGISTRO, ACCION, IDUSUARIO, FECHA, HORA, DETALLE)
-    VALUES (v_id, p_Tabla, IFNULL(p_IdRegistro, ''), p_Accion, p_IdUsuario,
-            DATE_FORMAT(NOW(), '%d%m%Y'), DATE_FORMAT(NOW(), '%H:%i:%s'), p_Detalle);
-    SET p_Resultado = 1; SET p_Mensaje = 'OK';
 END$$
 
 DELIMITER ;

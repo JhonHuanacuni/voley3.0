@@ -100,7 +100,7 @@ function MatriculasPeriodo() {
             {detalle.map((fila, i) => (
               <tr key={`${fila.TIPO}-${fila.IDALUMNA}-${fila.FECHA}-${i}`}>
                 <td>{dbToView(fila.FECHA)}</td>
-                <td>{fila.NOMBRE}</td>
+                <td>{String(fila.NOMBRE || "").toUpperCase()}</td>
                 <td>
                   <span className={`dash-tipo ${fila.TIPO === TIPO_NUEVA ? "dash-tipo--nueva" : "dash-tipo--mensualidad"}`}>
                     {fila.TIPO === TIPO_NUEVA ? "Nueva" : "Mensualidad"}
@@ -171,74 +171,6 @@ export default function DashboardPage() {
         ))}
       </section>
       <MatriculasPeriodo />
-      <AsistenciasTurno turnos={data?.turnos} cargando={!data && !error} />
     </div>
-  );
-}
-
-function AsistenciasTurno({ turnos = [], cargando }) {
-  const totalAlumnas = turnos.reduce((s, t) => s + Number(t.ALUMNAS || 0), 0);
-  const totalPresentes = turnos.reduce((s, t) => s + Number(t.PRESENTES || 0), 0);
-
-  return (
-    <section className="mantenedor-card dash-matriculas">
-      <div className="dash-matriculas-head">
-        <h2>Asistencias del mes por turno</h2>
-      </div>
-      <div className="data-table-wrap dash-matriculas-tabla dash-turnos-tabla">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Turno</th>
-              <th>Horario</th>
-              <th className="dash-num">Alumnas activas</th>
-              <th className="dash-num">Asistencias del mes</th>
-              <th>Participación</th>
-            </tr>
-          </thead>
-          <tbody>
-            {turnos.map((turno, i) => {
-              const porcentaje = totalPresentes ? Math.round((Number(turno.PRESENTES || 0) * 100) / totalPresentes) : 0;
-              return (
-                <tr key={`${turno.NOMBRE}-${i}`}>
-                  <td>{i + 1}</td>
-                  <td>{turno.NOMBRE}</td>
-                  <td className="dash-horario">{turno.HORAINICIO && turno.HORAFIN ? `${turno.HORAINICIO} - ${turno.HORAFIN}` : "—"}</td>
-                  <td className="dash-num">{turno.ALUMNAS ?? 0}</td>
-                  <td className="dash-num"><strong>{turno.PRESENTES ?? 0}</strong></td>
-                  <td>
-                    <div className="dash-barra" title={`${porcentaje}% de las asistencias del mes`}>
-                      <span style={{ width: `${porcentaje}%` }} />
-                    </div>
-                    <small className="dash-barra-texto">{porcentaje}%</small>
-                  </td>
-                </tr>
-              );
-            })}
-            {cargando && (
-              <tr>
-                <td colSpan={6} className="dash-matriculas-vacio">Cargando…</td>
-              </tr>
-            )}
-            {!cargando && !turnos.length && (
-              <tr>
-                <td colSpan={6} className="dash-matriculas-vacio">Sin turnos activos.</td>
-              </tr>
-            )}
-          </tbody>
-          {turnos.length > 0 && (
-            <tfoot>
-              <tr>
-                <td colSpan={3}>Total</td>
-                <td className="dash-num">{totalAlumnas}</td>
-                <td className="dash-num">{totalPresentes}</td>
-                <td />
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-    </section>
   );
 }

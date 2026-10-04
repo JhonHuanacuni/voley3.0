@@ -40,6 +40,17 @@ select,
 option {
   color: var(--text);
   background-color: #fff;
+  text-transform: uppercase;
+}
+
+input[type="search"],
+.mantenedor-search input {
+  text-transform: uppercase;
+}
+
+input[type="search"]::placeholder,
+.mantenedor-search input::placeholder {
+  text-transform: none;
 }
 
 .app-shell {

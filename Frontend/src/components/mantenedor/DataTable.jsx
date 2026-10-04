@@ -16,6 +16,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { dbToView, diasRestantesDesdeDb, textoDiasRestantes, claseDiasRestantes } from "../../utils/fecha";
 import { resumenDiasAsistencia } from "../../utils/diasPlan";
+import { etiquetaOperacion } from "../../utils/auditoria";
 
 function esEstudianteRetirado(row) {
   return String(row?.ESTUDIANTE_ESTADO || "").trim().toLowerCase() === "retirado";
@@ -225,11 +226,7 @@ function renderCell(col, row, index = 0, offset = 0) {
     return `${n.toLocaleString("es-PE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
   }
   if (col.tipo === "accionAuditoria") {
-    const accion = String(value || "").toUpperCase();
-    const clase =
-      accion === "INSERT" ? "insert" : accion === "UPDATE" ? "update" : accion === "DELETE" ? "delete" : "";
-    const label =
-      accion === "INSERT" ? "Alta" : accion === "UPDATE" ? "Modificación" : accion === "DELETE" ? "Eliminación" : accion;
+    const { clase, label } = etiquetaOperacion(value);
     return <span className={`auditoria-accion auditoria-accion--${clase}`}>{label}</span>;
   }
   return String(value);

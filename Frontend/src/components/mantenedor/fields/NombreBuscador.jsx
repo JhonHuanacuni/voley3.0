@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { buscarAlumnasCombo } from "../../../utils/combos";
 
 function detalle(opcion) {
   return [opcion.dni && `DNI ${opcion.dni}`, opcion.email, opcion.telefono].filter(Boolean).join(" · ");
@@ -6,14 +7,16 @@ function detalle(opcion) {
 
 export default function NombreBuscador({
   value,
-  opciones = [],
   placeholder = "",
   disabled,
   onChange,
 }) {
   const raiz = useRef(null);
+  const pedidoActual = useRef(0);
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState(value || "");
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
 
   useEffect(() => {
     setTexto(value || "");
@@ -27,13 +30,26 @@ export default function NombreBuscador({
     return () => document.removeEventListener("mousedown", cerrar);
   }, []);
 
-  const consulta = texto.trim().toLowerCase();
-  const visibles = useMemo(() => {
-    if (!abierto || !consulta) return [];
-    return opciones
-      .filter((op) => [op.label, op.dni, op.email, op.telefono].filter(Boolean).join(" ").toLowerCase().includes(consulta))
-      .slice(0, 8);
-  }, [abierto, consulta, opciones]);
+  const consulta = texto.trim();
+  const activo = abierto && Boolean(consulta) && !disabled;
+  const visibles = activo ? resultados : [];
+
+  useEffect(() => {
+    if (!activo) return undefined;
+    const espera = setTimeout(async () => {
+      const pedido = ++pedidoActual.current;
+      setBuscando(true);
+      try {
+        const lista = await buscarAlumnasCombo({ q: consulta, limite: 8 });
+        if (pedido === pedidoActual.current) setResultados(lista);
+      } catch {
+        if (pedido === pedidoActual.current) setResultados([]);
+      } finally {
+        if (pedido === pedidoActual.current) setBuscando(false);
+      }
+    }, 300);
+    return () => clearTimeout(espera);
+  }, [activo, consulta]);
 
   const elegir = (opcion) => {
     const nombre = String(opcion.label || "").toUpperCase();
@@ -78,7 +94,7 @@ export default function NombreBuscador({
               {detalle(op) && <small>{detalle(op)}</small>}
             </button>
           )) : (
-            <p>Sin coincidencias</p>
+            <p>{buscando ? "Buscando..." : "Sin coincidencias"}</p>
           )}
         </div>
       )}

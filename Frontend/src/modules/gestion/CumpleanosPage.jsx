@@ -11,14 +11,13 @@ const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "
 const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-function semanaActual(hoy) {
-  const inicio = new Date(hoy);
-  inicio.setDate(hoy.getDate() - ((hoy.getDay() + 6) % 7));
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(inicio);
-    d.setDate(inicio.getDate() + i);
-    return { dia: d.getDate(), mes: d.getMonth() + 1 };
-  });
+async function pedirCumpleanos(seccion, mes, idCiclo) {
+  const params = new URLSearchParams({ seccion, mes: String(mes) });
+  if (idCiclo) params.set("idciclo", idCiclo);
+  const res = await fetch(`/api/cumpleanos/?${params}`);
+  const data = await parseJsonResponse(res);
+  if (!res.ok) throw new Error(data.error || "No se pudieron cargar los cumpleaños");
+  return data.data;
 }
 
 function whatsapp(numero) {
@@ -37,13 +36,13 @@ function textoCumple(persona, hoy) {
 
 export default function CumpleanosPage() {
   const hoy = useMemo(() => new Date(), []);
-  const [datos, setDatos] = useState([]);
+  const [resultado, setResultado] = useState({ clave: "", filas: [] });
+  const [conteo, setConteo] = useState({ hoy: 0, semana: 0, mes: 0 });
   const [ciclos, setCiclos] = useState([]);
   const [idCiclo, setIdCiclo] = useState("");
   const [pestana, setPestana] = useState("mes");
   const [mes, setMes] = useState(hoy.getMonth() + 1);
   const [vista, setVista] = useState("lista");
-  const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -60,38 +59,37 @@ export default function CumpleanosPage() {
 
   useEffect(() => {
     let vigente = true;
-    setCargando(true);
-    setError("");
-    (async () => {
-      try {
-        const res = await fetch(`/api/cumpleanos/?idciclo=${encodeURIComponent(idCiclo)}`);
-        const data = await parseJsonResponse(res);
-        if (!res.ok) throw new Error(data.error || "No se pudieron cargar los cumpleaños");
-        if (vigente) setDatos(data.data?.data || []);
-      } catch (err) {
-        if (vigente) setError(err.message);
-      } finally {
-        if (vigente) setCargando(false);
-      }
-    })();
+    pedirCumpleanos("conteo", mes, idCiclo)
+      .then((data) => vigente && setConteo(data || { hoy: 0, semana: 0, mes: 0 }))
+      .catch(() => {});
     return () => {
       vigente = false;
     };
-  }, [idCiclo]);
+  }, [mes, idCiclo]);
 
-  const semana = useMemo(() => semanaActual(hoy), [hoy]);
-  const grupos = useMemo(() => {
-    const enSemana = (p) => semana.some((d) => d.dia === p.DIA && d.mes === p.MES);
-    const ordenSemana = (p) => semana.findIndex((d) => d.dia === p.DIA && d.mes === p.MES);
-    return {
-      hoy: datos.filter((p) => p.FALTAN === 0),
-      semana: datos.filter(enSemana).sort((a, b) => ordenSemana(a) - ordenSemana(b)),
-      mes: datos.filter((p) => p.MES === mes).sort((a, b) => a.DIA - b.DIA || a.NOMBRE.localeCompare(b.NOMBRE)),
-      mesActual: datos.filter((p) => p.MES === hoy.getMonth() + 1),
+  const claveActual = `${pestana}|${mes}|${idCiclo}`;
+
+  useEffect(() => {
+    let vigente = true;
+    pedirCumpleanos(pestana, mes, idCiclo)
+      .then((data) => {
+        if (!vigente) return;
+        setError("");
+        setResultado({ clave: `${pestana}|${mes}|${idCiclo}`, filas: data || [] });
+      })
+      .catch((err) => {
+        if (!vigente) return;
+        setError(err.message);
+        setResultado({ clave: `${pestana}|${mes}|${idCiclo}`, filas: [] });
+      });
+    return () => {
+      vigente = false;
     };
-  }, [datos, semana, mes, hoy]);
+  }, [pestana, mes, idCiclo]);
 
-  const lista = grupos[pestana] || [];
+  const cargando = resultado.clave !== claveActual;
+  const lista = useMemo(() => (cargando ? [] : resultado.filas), [cargando, resultado.filas]);
+
   const nombreCiclo = ciclos.find((c) => c.value === idCiclo)?.label;
   const tituloLista = pestana === "hoy"
     ? "Cumpleañeras de hoy"
@@ -127,61 +125,23 @@ export default function CumpleanosPage() {
         clave: `d${dia}`,
         dia,
         hoy: dia === hoy.getDate() && mes === hoy.getMonth() + 1,
-        personas: grupos.mes.filter((p) => p.DIA === dia),
+        personas: pestana === "mes" ? lista.filter((p) => p.DIA === dia) : [],
       });
     }
     while (celdas.length % 7) celdas.push({ clave: `f${celdas.length}`, fuera: true });
     return celdas;
-  }, [grupos.mes, mes, hoy]);
+  }, [lista, pestana, mes, hoy]);
 
   return (
     <div className="mantenedor-page">
-      <div className="page-header gestion-head">
-        <h1>Cumpleaños</h1>
-        <div className="gestion-filtros">
-          <label>
-            Categoría
-            <select value={idCiclo} onChange={(e) => setIdCiclo(e.target.value)}>
-              <option value="">Todas las categorías</option>
-              {ciclos.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-
       {error && <p className="field-error">{error}</p>}
-
-      <section className="gestion-kpis">
-        <button type="button" className={`gestion-kpi ${pestana === "hoy" ? "is-activo" : ""}`} onClick={() => setPestana("hoy")}>
-          <p>Hoy</p>
-          <strong>{cargando ? "—" : grupos.hoy.length}</strong>
-          <small>{hoy.getDate()} de {MESES[hoy.getMonth()].toLowerCase()}</small>
-        </button>
-        <button type="button" className={`gestion-kpi gestion-kpi--info ${pestana === "semana" ? "is-activo" : ""}`} onClick={() => setPestana("semana")}>
-          <p>Esta semana</p>
-          <strong>{cargando ? "—" : grupos.semana.length}</strong>
-          <small>Lunes a domingo</small>
-        </button>
-        <button
-          type="button"
-          className={`gestion-kpi gestion-kpi--ok ${pestana === "mes" && mes === hoy.getMonth() + 1 ? "is-activo" : ""}`}
-          onClick={() => {
-            setPestana("mes");
-            setMes(hoy.getMonth() + 1);
-          }}
-        >
-          <p>Este mes</p>
-          <strong>{cargando ? "—" : grupos.mesActual.length}</strong>
-          <small>{MESES[hoy.getMonth()]}</small>
-        </button>
-      </section>
 
       <section className="mantenedor-card">
         <div className="gestion-tabs">
           {[
-            ["hoy", "Hoy", grupos.hoy.length],
-            ["semana", "Semana", grupos.semana.length],
-            ["mes", "Mes", grupos.mes.length],
+            ["hoy", "Hoy", conteo.hoy],
+            ["semana", "Semana", conteo.semana],
+            ["mes", "Mes", conteo.mes],
           ].map(([clave, etiqueta, total]) => (
             <button key={clave} type="button" className={`gestion-tab ${pestana === clave ? "is-activo" : ""}`} onClick={() => setPestana(clave)}>
               {etiqueta}<span>{total}</span>
@@ -190,6 +150,10 @@ export default function CumpleanosPage() {
         </div>
         <div className="gestion-barra">
           <div className="gestion-filtros">
+            <select value={idCiclo} onChange={(e) => setIdCiclo(e.target.value)} aria-label="Categoría">
+              <option value="">TODAS LAS CATEGORÍAS</option>
+              {ciclos.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
             {pestana === "mes" && (
               <>
                 <select value={mes} onChange={(e) => setMes(Number(e.target.value))} aria-label="Mes">
@@ -227,10 +191,10 @@ export default function CumpleanosPage() {
                     key={p.IDALUMNA}
                     type="button"
                     className="cumple-dia-persona"
-                    title={`${p.NOMBRE} · ${p.CICLO || "Sin categoría"}`}
+                    title={`${String(p.NOMBRE || "").toUpperCase()} · ${p.CICLO || "Sin categoría"}`}
                     onClick={() => abrirEstadoCuenta(p.IDALUMNA)}
                   >
-                    {p.NOMBRE}
+                    {String(p.NOMBRE || "").toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -254,7 +218,7 @@ export default function CumpleanosPage() {
                   </div>
                   <div>
                     <h3>
-                      <button type="button" onClick={() => abrirEstadoCuenta(p.IDALUMNA)}>{p.NOMBRE}</button>
+                      <button type="button" onClick={() => abrirEstadoCuenta(p.IDALUMNA)}>{String(p.NOMBRE || "").toUpperCase()}</button>
                     </h3>
                     <p>
                       {textoCumple(p, hoy)} · {p.CICLO || "Sin categoría"}{p.TURNO ? ` · ${p.TURNO}` : ""}

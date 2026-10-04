@@ -14,6 +14,14 @@ def _clave_valida(almacenada, ingresada):
     return guardada == ingresada
 
 
+def registrar_acceso(username, accion, detalle, exitoso):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'CALL usp_auditoria_movimiento(%s, %s, NULL, %s, %s, %s, NULL, NULL, %s)',
+            ['USUARIO', username[:50], 'LOGIN', accion, detalle, username[:50] if exitoso else None],
+        )
+
+
 def validar_usuario(username, password):
     with connection.cursor() as cursor:
         filas = sp.call_simple(cursor, 'usp_login_obtener', [username])

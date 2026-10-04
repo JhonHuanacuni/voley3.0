@@ -22,8 +22,22 @@ DROP PROCEDURE IF EXISTS usp_pago_validar;
 DROP PROCEDURE IF EXISTS usp_pago_insertar;
 DROP PROCEDURE IF EXISTS usp_pago_actualizar;
 DROP PROCEDURE IF EXISTS usp_pago_eliminar;
+DROP PROCEDURE IF EXISTS usp_mensualidad_por_alumna;
 
 DELIMITER $$
+
+-- Periodos que se pueden pagar de una alumna (select de mensualidad en Pagos).
+CREATE PROCEDURE usp_mensualidad_por_alumna(IN p_IdAlumna VARCHAR(50))
+BEGIN
+    SELECT m.IDMENSUALIDAD, m.IDALUMNA, m.FECHAINICIO, m.FECHAFIN, m.ESTADO, m.MONTO,
+           GREATEST(m.MONTO - IFNULL(pg.PAGADO, 0), 0) AS SALDO
+    FROM MENSUALIDAD m
+    LEFT JOIN (SELECT IDMENSUALIDAD, SUM(MONTO) AS PAGADO FROM PAGO GROUP BY IDMENSUALIDAD) pg
+           ON pg.IDMENSUALIDAD = m.IDMENSUALIDAD
+    WHERE m.IDALUMNA = p_IdAlumna
+      AND m.ESTADO <> 'Inactivo'
+    ORDER BY STR_TO_DATE(m.FECHAINICIO, '%d%m%Y') DESC;
+END$$
 
 -- El periodo vigente de la alumna es el último que no está marcado como inactivo.
 CREATE PROCEDURE usp_alumna_periodo_actual(IN p_IdAlumna VARCHAR(50))

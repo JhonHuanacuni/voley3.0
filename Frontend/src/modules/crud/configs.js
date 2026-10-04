@@ -1,4 +1,5 @@
 import { primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+import { OPERACIONES_AUDITORIA, TABLAS_AUDITORIA } from "../../utils/auditoria";
 
 const MEDIOS = ["Efectivo", "Transferencia", "Tarjeta", "Yape", "Plin", "Otro"];
 const GENEROS = ["Mujer", "Hombre"];
@@ -38,14 +39,14 @@ const filtrosAlumna = [
   { key: "estado", etiqueta: "Estado", opciones: ESTADOS_ALUMNA },
   { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
   { key: "idturno", etiqueta: "Turno", catalogo: "turnos" },
-  { key: "desde", etiqueta: "Inscripción desde", tipo: "fecha" },
-  { key: "hasta", etiqueta: "Inscripción hasta", tipo: "fecha" },
+  { key: "desde", etiqueta: "Desde", tipo: "fecha" },
+  { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
 ];
 
 const columnasAlumna = [
-  { campo: "NOMBRE", etiqueta: "Alumna", ordenable: true },
+  { campo: "NOMBRE", etiqueta: "Alumna", ordenable: true, mayusculas: true },
   { campo: "DNI", etiqueta: "DNI" },
-  { campo: "CICLO", etiqueta: "Ciclo" },
+  { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
   { campo: "TURNO", etiqueta: "Turno" },
   { campo: "CONDICION", etiqueta: "Condición" },
   { campo: "ESTADO", etiqueta: "Estado", tipo: "estado" },
@@ -192,23 +193,18 @@ export const mensualidadConfig = {
     { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
   ],
   columnas: [
-    { campo: "ALUMNA", etiqueta: "Alumna" },
+    { campo: "ALUMNA", etiqueta: "Alumna", mayusculas: true },
     { campo: "TIPO", etiqueta: "Concepto" },
-    { campo: "CICLO", etiqueta: "Ciclo" },
+    { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
     { campo: "FECHAINICIO", etiqueta: "Inicio", tipo: "fecha" },
     { campo: "FECHAFIN", etiqueta: "Fin", tipo: "fecha" },
     { campo: "MONTO", etiqueta: "Monto", tipo: "decimal" },
-    { campo: "DESCUENTO", etiqueta: "Descuento", tipo: "decimal" },
     { campo: "PAGADO", etiqueta: "Pagado", tipo: "decimal" },
     { campo: "SALDO", etiqueta: "Saldo", tipo: "decimal" },
     { campo: "ESTADO", etiqueta: "Pago", tipo: "estadoPago" },
-    { campo: "SITUACION", etiqueta: "Situación", tipo: "estado" },
-    { campo: "VIGENCIA", etiqueta: "Vigencia" },
-    { campo: "VENCE", etiqueta: "Restante", tipo: "diasRestantes", origen: "FECHAFIN" },
-    { campo: "REGISTRADOPOR", etiqueta: "Registrado por", tipo: "traza" },
   ],
   campos: [
-    { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", catalogo: "alumnas", obligatorio: true, buscar: true },
+    { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", remoto: "alumnas", obligatorio: true },
     {
       campo: "PERIODO",
       etiqueta: "Tipo de periodo",
@@ -274,8 +270,8 @@ export const pagoConfig = {
   ],
   columnas: [
     { campo: "IDPAGO", etiqueta: "Recibo" },
-    { campo: "ALUMNA", etiqueta: "Alumna" },
-    { campo: "CICLO", etiqueta: "Ciclo" },
+    { campo: "ALUMNA", etiqueta: "Alumna", mayusculas: true },
+    { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "PERIODO", etiqueta: "Periodo pagado" },
     { campo: "MONTO", etiqueta: "Monto", tipo: "decimal" },
@@ -284,12 +280,12 @@ export const pagoConfig = {
     { campo: "REGISTRADOPOR", etiqueta: "Registrado por", tipo: "traza" },
   ],
   campos: [
-    { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", catalogo: "alumnas", obligatorio: true, buscar: true, limpia: ["IDMENSUALIDAD"] },
+    { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", remoto: "alumnas", obligatorio: true, limpia: ["IDMENSUALIDAD"] },
     {
       campo: "IDMENSUALIDAD",
       etiqueta: "Periodo que se paga",
       control: "select",
-      catalogo: "mensualidades",
+      remoto: "mensualidades",
       filtraPor: "IDALUMNA",
       obligatorio: true,
       ayuda: "Elige el periodo exacto. El pago no se pasa solo a otro periodo ni puede superar su saldo.",
@@ -361,8 +357,8 @@ export const ventaConfig = {
   columnas: [
     { campo: "NUMERO", etiqueta: "Recibo" },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
-    { campo: "NOMBRE", etiqueta: "Nombre" },
-    { campo: "CICLO", etiqueta: "Ciclo" },
+    { campo: "NOMBRE", etiqueta: "Nombre", mayusculas: true },
+    { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
     { campo: "PRODUCTO", etiqueta: "Producto o servicio" },
     { campo: "TALLA", etiqueta: "Talla" },
     { campo: "PRECIO", etiqueta: "Total", tipo: "decimal" },
@@ -387,7 +383,7 @@ export const ventaConfig = {
   reporteVentas: true,
   controlRecibos: true,
   campos: [
-    { campo: "NOMBRE", etiqueta: "Buscar", control: "buscarNombre", catalogo: "alumnas", obligatorio: true, placeholder: "Buscar alumno" },
+    { campo: "NOMBRE", etiqueta: "Buscar", control: "buscarNombre", obligatorio: true, placeholder: "Buscar alumno" },
     {
       campo: "TIPO",
       etiqueta: "Tipo",
@@ -490,8 +486,8 @@ export const usuarioConfig = {
   filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Retirado"] }],
   columnas: [
     { campo: "IDUSUARIO", etiqueta: "Usuario" },
-    { campo: "NOMBRE", etiqueta: "Nombre" },
-    { campo: "APELLIDO", etiqueta: "Apellido" },
+    { campo: "NOMBRE", etiqueta: "Nombre", mayusculas: true },
+    { campo: "APELLIDO", etiqueta: "Apellido", mayusculas: true },
     { campo: "TIPOUSUARIO_DESCRIPCION", etiqueta: "Tipo" },
     { campo: "ESTADO", etiqueta: "Estado", tipo: "estado" },
   ],
@@ -538,25 +534,32 @@ export const auditoriaConfig = {
   entidad: "auditoria",
   pk: "IDAUDITORIA",
   permitirNuevo: false,
-  permitirVer: false,
   permitirEditar: false,
   permitirEliminar: false,
-  placeholder: "Buscar por tabla, usuario, código o detalle...",
+  detalleAuditoria: true,
+  ordenInicial: { campo: "FECHA", direccion: "DESC" },
+  placeholder: "Buscar por tabla, usuario, código, campo, módulo, IP o detalle...",
   filtros: [
     { key: "desde", etiqueta: "Desde", tipo: "fecha" },
     { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
     {
-      key: "estado",
-      etiqueta: "Tabla",
-      opciones: ["ALUMNA", "MENSUALIDAD", "PAGO", "VENTA", "PROMOCION", "USUARIO", "EGRESO"],
+      key: "operacion",
+      etiqueta: "Operación",
+      opciones: Object.entries(OPERACIONES_AUDITORIA).map(([value, label]) => ({ value, label })),
     },
+    { key: "estado", etiqueta: "Tabla", opciones: TABLAS_AUDITORIA },
   ],
   columnas: [
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "HORA", etiqueta: "Hora" },
     { campo: "IDUSUARIO", etiqueta: "Usuario" },
+    { campo: "OPERACION", etiqueta: "Operación", tipo: "accionAuditoria" },
     { campo: "TABLA", etiqueta: "Tabla" },
+    { campo: "IDREGISTRO", etiqueta: "Registro" },
     { campo: "ACCION", etiqueta: "Acción" },
-    { campo: "DETALLE", etiqueta: "Detalle" },
+    { campo: "CAMPOS", etiqueta: "Campos modificados", ordenable: false },
+    { campo: "MODULO", etiqueta: "Módulo" },
+    { campo: "IP", etiqueta: "IP" },
+    { campo: "DETALLE", etiqueta: "Detalle", ordenable: false },
   ],
 };

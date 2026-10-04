@@ -7,6 +7,7 @@ from django.views.decorators.csrf import csrf_exempt
 from apps.academia.service import (
     OPERACIONES,
     abonos_venta,
+    alumnas_combo,
     anular_abono,
     anular_venta,
     registrar_abono,
@@ -14,15 +15,16 @@ from apps.academia.service import (
     avisos,
     buscar_general,
     catalogos,
-    control_recibos,
     cumpleanos,
     dashboard,
     dashboard_matriculas,
     deudas,
     es_primera_mensualidad,
     estado_cuenta,
+    estado_cuenta_seccion,
     listar_ordenado,
     marcar_asistencia,
+    mensualidades_por_alumna,
     renovar_mensualidad,
     reporte,
     trazabilidad,
@@ -149,16 +151,6 @@ def entidad(request, nombre, id_registro=None):
 
 
 @csrf_exempt
-def ventas_control_view(request):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Método no permitido'}, status=405)
-    try:
-        return JsonResponse({'data': control_recibos()})
-    except Exception as exc:
-        return JsonResponse({'error': str(exc)}, status=500)
-
-
-@csrf_exempt
 def venta_anular_view(request, id_registro):
     if request.method != 'POST':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -279,7 +271,7 @@ def asistencia_dia_view(request):
     if len(fecha) != 8:
         return JsonResponse({'error': 'Indica la fecha.'}, status=400)
     try:
-        return JsonResponse({'data': asistencia_dia(fecha, id_turno)})
+        return JsonResponse({'data': asistencia_dia(fecha, id_turno, request.GET.get('buscar'))})
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
 
@@ -307,6 +299,28 @@ def cumpleanos_view(request):
         return JsonResponse({'error': 'Método no permitido'}, status=405)
     try:
         return JsonResponse({'data': cumpleanos(request.GET)})
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def alumnas_combo_view(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    try:
+        return JsonResponse({'data': alumnas_combo(request.GET)})
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def mensualidades_por_alumna_view(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    try:
+        return JsonResponse({'data': mensualidades_por_alumna(request.GET.get('idalumna'))})
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
 
@@ -337,6 +351,18 @@ def estado_cuenta_view(request, id_alumna):
 
 
 @csrf_exempt
+def estado_cuenta_seccion_view(request, id_alumna, seccion):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    try:
+        return JsonResponse({'data': estado_cuenta_seccion(id_alumna, seccion, request.GET)})
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
 def deudas_view(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -345,6 +371,8 @@ def deudas_view(request):
         return denegado
     try:
         return JsonResponse({'data': deudas(request.GET)})
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
 

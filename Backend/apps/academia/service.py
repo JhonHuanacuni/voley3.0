@@ -1,5 +1,6 @@
 """CRUD de negocio vía stored procedures de VoleyDB."""
 
+import json
 import unicodedata
 from datetime import date
 
@@ -40,7 +41,7 @@ def _clave_orden(campo):
 def listar_ordenado(listar, params):
     """Ordena por cualquier columna sobre todos los registros filtrados y luego pagina."""
     campo = str(params.get('ordenarPor') or '').strip().upper()
-    if not campo:
+    if not campo or listar in ORDENAN_EN_SP:
         return listar(params)
     pagina = max(int(params.get('pagina') or 1), 1)
     tamanio = max(int(params.get('tamanio') or 10), 1)
@@ -463,33 +464,6 @@ def anular_venta(id_registro, usuario=None):
     return _escribir('usp_venta_anular', [id_registro, texto(usuario, 50, mayusculas=False) or ''])
 
 
-def _saltos(numeros, prefijo):
-    valores = []
-    for numero in numeros:
-        texto_num = str(numero or '')
-        if not texto_num.startswith(prefijo):
-            continue
-        try:
-            valores.append(int(texto_num[len(prefijo):]))
-        except ValueError:
-            continue
-    if not valores:
-        return []
-    presentes = set(valores)
-    return [f'{prefijo}{i:06d}' for i in range(1, max(valores) + 1) if i not in presentes]
-
-
-def control_recibos():
-    with connection.cursor() as cursor:
-        filas = sp.call_simple(cursor, 'usp_venta_recibos', [])
-    filas = jsonable(filas)
-    return {
-        'anulados': [f for f in filas if f.get('ESTADO_RECIBO') == 'Anulado'],
-        'eliminados': [f for f in filas if f.get('ESTADO_RECIBO') == 'Eliminado'],
-        'saltos': _saltos((f.get('IDVENTA') for f in filas), 'VEN') + _saltos((f.get('COMPROBANTE') for f in filas), 'CMP'),
-    }
-
-
 def listar_egresos(params):
     return _listar('usp_egreso_listar', _paginacion(params, extras=_rango(params)))
 
@@ -522,12 +496,25 @@ def eliminar_egreso(id_registro):
 
 
 def listar_auditoria(params):
-    return _listar('usp_auditoria_listar', _paginacion(params, extras=_rango(params)))
+    extras = _rango(params) + [texto(params.get('operacion'), 10)]
+    return _listar('usp_auditoria_listar', _paginacion(params, extras=extras))
 
 
-def asistencia_dia(fecha, id_turno):
+def obtener_auditoria(id_registro):
+    fila = _uno('usp_auditoria_obtener', id_registro)
+    if fila:
+        for campo in ('VALORANTERIOR', 'VALORNUEVO'):
+            if isinstance(fila.get(campo), str):
+                fila[campo] = json.loads(fila[campo])
+    return fila
+
+
+ORDENAN_EN_SP = {listar_auditoria}
+
+
+def asistencia_dia(fecha, id_turno, buscar=''):
     with connection.cursor() as cursor:
-        rows = sp.call_simple(cursor, 'usp_asistencia_dia', [fecha, id_turno or None])
+        rows = sp.call_simple(cursor, 'usp_asistencia_dia', [fecha, id_turno or None, str(buscar or '').strip()[:100]])
     return jsonable(rows)
 
 
@@ -542,10 +529,8 @@ def marcar_asistencia(payload):
 def dashboard():
     with connection.cursor() as cursor:
         resumen = sp.call_simple(cursor, 'usp_dashboard_resumen', [])
-        turnos = sp.call_simple(cursor, 'usp_dashboard_turnos', [])
     return {
         'resumen': jsonable(resumen[0] if resumen else {}),
-        'turnos': jsonable(turnos),
     }
 
 
@@ -599,46 +584,27 @@ def eliminar_promocion(id_registro):
     return _escribir('usp_promocion_eliminar', [id_registro])
 
 
-def _fecha_db(valor):
-    """CHAR(8) DDMMYYYY a date, o None."""
-    s = str(valor or '').strip()
-    if len(s) != 8 or not s.isdigit():
-        return None
-    try:
-        return date(int(s[4:]), int(s[2:4]), int(s[:2]))
-    except ValueError:
-        return None
-
-
-def _proximo_cumple(nacimiento, hoy):
-    try:
-        cumple = nacimiento.replace(year=hoy.year)
-    except ValueError:
-        cumple = date(hoy.year, 3, 1)
-    if cumple < hoy:
-        try:
-            cumple = nacimiento.replace(year=hoy.year + 1)
-        except ValueError:
-            cumple = date(hoy.year + 1, 3, 1)
-    return cumple
-
-
 def cumpleanos(params):
-    hoy = date.today()
+    seccion = params.get('seccion') or 'mes'
+    id_ciclo = str(params.get('idciclo') or '').strip()[:50] or None
+    try:
+        mes = int(params.get('mes') or date.today().month)
+    except (TypeError, ValueError):
+        mes = date.today().month
+    if not 1 <= mes <= 12:
+        raise ValueError('Mes no válido')
     with connection.cursor() as cursor:
-        filas = jsonable(sp.call_simple(cursor, 'usp_cumpleanos_listar', [params.get('idciclo') or None]))
-    datos = []
-    for fila in filas:
-        nacimiento = _fecha_db(fila.get('FECHANACIMIENTO'))
-        if not nacimiento:
-            continue
-        proximo = _proximo_cumple(nacimiento, hoy)
-        fila['DIA'] = nacimiento.day
-        fila['MES'] = nacimiento.month
-        fila['CUMPLE'] = proximo.year - nacimiento.year
-        fila['FALTAN'] = (proximo - hoy).days
-        datos.append(fila)
-    return {'hoy': hoy.strftime('%d%m%Y'), 'data': datos}
+        if seccion == 'conteo':
+            fila = jsonable(sp.call_simple(cursor, 'usp_cumpleanos_conteo', [mes, id_ciclo]))
+            totales = fila[0] if fila else {}
+            return {clave.lower(): int(totales.get(clave) or 0) for clave in ('HOY', 'SEMANA', 'MES')}
+        if seccion == 'hoy':
+            return jsonable(sp.call_simple(cursor, 'usp_cumpleanos_hoy', [id_ciclo]))
+        if seccion == 'semana':
+            return jsonable(sp.call_simple(cursor, 'usp_cumpleanos_semana', [id_ciclo]))
+        if seccion == 'mes':
+            return jsonable(sp.call_simple(cursor, 'usp_cumpleanos_mes', [mes, id_ciclo]))
+    raise ValueError('Sección no válida')
 
 
 def buscar_general(texto_buscar):
@@ -646,12 +612,39 @@ def buscar_general(texto_buscar):
         return jsonable(sp.call_simple(cursor, 'usp_alumna_buscar_general', [str(texto_buscar or '').strip()[:100]]))
 
 
+def alumnas_combo(params):
+    texto_buscar = str(params.get('q') or '').strip()[:100]
+    id_alumna = str(params.get('id') or '').strip()[:50]
+    try:
+        limite = int(params.get('limite') or 20)
+    except (TypeError, ValueError):
+        limite = 20
+    with connection.cursor() as cursor:
+        filas = sp.call_simple(cursor, 'usp_alumna_combo', [texto_buscar, id_alumna, limite])
+    return [
+        {'value': f['IDALUMNA'], 'label': f['NOMBRE'], 'dni': f['DNI'], 'email': f['EMAIL'], 'telefono': f['TELEFONO']}
+        for f in jsonable(filas)
+    ]
+
+
+def mensualidades_por_alumna(id_alumna):
+    if not id_alumna:
+        return []
+    with connection.cursor() as cursor:
+        filas = sp.call_simple(cursor, 'usp_mensualidad_por_alumna', [str(id_alumna).strip()[:50]])
+    return [
+        {'value': f['IDMENSUALIDAD'], 'idalumna': f['IDALUMNA'], 'inicio': f['FECHAINICIO'], 'fin': f['FECHAFIN'],
+         'estado': f['ESTADO'], 'monto': float(f['MONTO'] or 0), 'saldo': float(f['SALDO'] or 0)}
+        for f in jsonable(filas)
+    ]
+
+
 def estado_cuenta(id_alumna):
     with connection.cursor() as cursor:
-        sets = jsonable(sp.call_sets(cursor, 'usp_estado_cuenta', [id_alumna]))
-    while len(sets) < 7:
+        sets = [_sin_orden(s) for s in sp.call_sets(cursor, 'usp_estado_cuenta', [id_alumna])]
+    while len(sets) < 6:
         sets.append([])
-    alumna, mensualidades, pagos, ventas, productos, historial, abonos = sets[:7]
+    alumna, mensualidades, pagos, ventas, productos, abonos = sets[:6]
     if not alumna:
         return None
     saldo_men = sum(m.get('SALDO') or 0 for m in mensualidades)
@@ -662,7 +655,6 @@ def estado_cuenta(id_alumna):
         'pagos': pagos,
         'ventas': ventas,
         'productos': productos,
-        'historial': historial,
         'abonos': abonos,
         'resumen': {
             'pagadas': sum(1 for m in mensualidades if m.get('ESTADO') == 'Completada'),
@@ -678,62 +670,101 @@ def estado_cuenta(id_alumna):
     }
 
 
-def deudas(params):
+SECCIONES_ESTADO_CUENTA = {
+    'mensualidades': (('MONTO', 'DESCUENTO', 'PAGADO', 'SALDO'),
+                      ('FECHAINICIO', 'FECHAFIN', 'MONTOREGULAR', 'MONTO', 'DESCUENTO', 'PAGADO', 'SALDO',
+                       'ESTADO', 'PROMOCION')),
+    'pagos': (('MONTO',), ('FECHA', 'IDPAGO', 'FECHAPERIODO', 'MONTO', 'MEDIO', 'PARCIAL')),
+    'ventas': (('PRECIO', 'PAGADO', 'SALDO'),
+               ('FECHA', 'NUMERO', 'TIPO', 'PRODUCTO', 'PRECIO', 'PAGADO', 'SALDO', 'MEDIO', 'ESTADO_RECIBO')),
+    'abonos': (('MONTO',), ('FECHA', 'NUMERO', 'PRODUCTO', 'PRECIO', 'ORIGEN', 'MONTO', 'MEDIO', 'SALDO')),
+    'productos': (('PRECIO',), ('FECHA', 'NUMERO', 'PRODUCTO', 'TALLA', 'PRECIO')),
+}
+
+
+def estado_cuenta_seccion(id_alumna, seccion, params):
+    if seccion not in SECCIONES_ESTADO_CUENTA:
+        raise ValueError('Sección no válida')
+    sumables, ordenables = SECCIONES_ESTADO_CUENTA[seccion]
+    estado = str(params.get('estado') or '').strip().lower()
+    estado = estado if seccion == 'mensualidades' and estado in ('pagadas', 'pendientes') else ''
+    with connection.cursor() as cursor:
+        filas = _sin_orden(sp.call_simple(cursor, 'usp_estado_cuenta_seccion',
+                                          [id_alumna, seccion, estado, *_orden_params(params, ordenables)]))
+    base = [f for f in filas if f.get('ESTADO_RECIBO') == 'Emitido'] if seccion == 'ventas' else filas
+    totales = {clave: round(sum(float(f.get(clave) or 0) for f in base), 2) for clave in sumables}
+    total = len(filas)
+    pagina, tamanio = 1, total
+    if str(params.get('todo') or '') != '1':
+        pagina, tamanio = _paginacion_simple(params)
+        filas = filas[(pagina - 1) * tamanio: pagina * tamanio]
+    return {'filas': filas, 'totales': totales, 'total': total, 'pagina': pagina, 'tamanio': tamanio}
+
+
+def _deudas_filtros(params):
     try:
         dias = max(1, min(int(params.get('dias') or 7), 60))
     except (TypeError, ValueError):
         dias = 7
+    buscar = str(params.get('buscar') or '').strip()[:100]
+    id_ciclo = str(params.get('idciclo') or '').strip()[:50]
+    return dias, buscar, id_ciclo
+
+
+def deudas_conteo(params):
+    dias, buscar, id_ciclo = _deudas_filtros(params)
     with connection.cursor() as cursor:
-        sets = jsonable(sp.call_sets(cursor, 'usp_deudas', [dias]))
-    while len(sets) < 3:
-        sets.append([])
-    mensualidades, proximas, ventas = sets[:3]
-
-    por_alumna = {}
-
-    def _grupo(clave, nombre, ciclo, telefono):
-        if clave not in por_alumna:
-            por_alumna[clave] = {
-                'IDALUMNA': clave if not clave.startswith('NOMBRE:') else None,
-                'ALUMNA': nombre, 'CICLO': ciclo, 'TELAPODERADO': telefono,
-                'VENCIDAS': 0, 'MENSUALIDADES': 0.0, 'PRODUCTOS': 0.0, 'SERVICIOS': 0.0, 'TOTAL': 0.0,
-            }
-        return por_alumna[clave]
-
-    for m in mensualidades:
-        g = _grupo(m['IDALUMNA'], m.get('ALUMNA'), m.get('CICLO'), m.get('TELAPODERADO'))
-        g['MENSUALIDADES'] += m.get('SALDO') or 0
-        if m.get('SITUACION') == 'Vencida':
-            g['VENCIDAS'] += 1
-    for v in ventas:
-        clave = v.get('IDALUMNA') or f"NOMBRE:{v.get('ALUMNA')}"
-        g = _grupo(clave, v.get('ALUMNA'), v.get('CICLO'), None)
-        g['SERVICIOS' if v.get('TIPO') == 'Servicio' else 'PRODUCTOS'] += v.get('SALDO') or 0
-    for g in por_alumna.values():
-        g['TOTAL'] = round(g['MENSUALIDADES'] + g['PRODUCTOS'] + g['SERVICIOS'], 2)
-    alumnas = sorted(por_alumna.values(), key=lambda g: (-g['TOTAL'], g['ALUMNA'] or ''))
-
-    vencidas = [m for m in mensualidades if m.get('SITUACION') == 'Vencida']
-    total_men = sum(m.get('SALDO') or 0 for m in mensualidades)
-    total_prod = sum(v.get('SALDO') or 0 for v in ventas if v.get('TIPO') != 'Servicio')
-    total_serv = sum(v.get('SALDO') or 0 for v in ventas if v.get('TIPO') == 'Servicio')
+        filas = jsonable(sp.call_simple(cursor, 'usp_deudas_conteo', [dias, buscar, id_ciclo]))
+    t = filas[0] if filas else {}
+    mensualidades = float(t.get('MONTOMENSUALIDADES') or 0)
+    productos = float(t.get('PRODUCTOS') or 0)
+    servicios = float(t.get('SERVICIOS') or 0)
     return {
-        'dias': dias,
-        'mensualidades': mensualidades,
-        'proximas': proximas,
-        'ventas': ventas,
-        'alumnas': alumnas,
-        'totales': {
-            'vencidas': len(vencidas),
-            'montoVencido': round(sum(m.get('SALDO') or 0 for m in vencidas), 2),
-            'proximas': len(proximas),
-            'mensualidades': round(total_men, 2),
-            'productos': round(total_prod, 2),
-            'servicios': round(total_serv, 2),
-            'porCobrar': round(total_men + total_prod + total_serv, 2),
-            'alumnas': len(alumnas),
-        },
+        'alumnas': int(t.get('ALUMNAS') or 0),
+        'mensualidadesConSaldo': int(t.get('MENSUALIDADES') or 0),
+        'proximas': int(t.get('PROXIMAS') or 0),
+        'ventas': int(t.get('VENTAS') or 0),
+        'vencidas': int(t.get('VENCIDAS') or 0),
+        'montoVencido': round(float(t.get('MONTOVENCIDO') or 0), 2),
+        'mensualidades': round(mensualidades, 2),
+        'productos': round(productos, 2),
+        'servicios': round(servicios, 2),
+        'porCobrar': round(mensualidades + productos + servicios, 2),
     }
+
+
+def _tipo_venta(params):
+    tipo = str(params.get('tipo') or '').strip()
+    return tipo if tipo in ('Producto físico', 'Servicio') else None
+
+
+def deudas(params):
+    seccion = params.get('seccion') or 'alumnas'
+    if seccion == 'conteo':
+        return deudas_conteo(params)
+    dias, buscar, id_ciclo = _deudas_filtros(params)
+    procedimientos = {
+        'alumnas': ('usp_deudas_alumnas', [buscar, id_ciclo], ('MENSUALIDADES', 'PRODUCTOS', 'SERVICIOS', 'TOTAL'),
+                    ('ALUMNA', 'CICLO', 'VENCIDAS', 'MENSUALIDADES', 'PRODUCTOS', 'SERVICIOS', 'TOTAL')),
+        'mensualidades': ('usp_deudas_mensualidades', [buscar, id_ciclo], ('MONTO', 'PAGADO', 'SALDO'),
+                          ('ALUMNA', 'CICLO', 'FECHAINICIO', 'FECHAFIN', 'MONTO', 'PAGADO', 'SALDO', 'SITUACION')),
+        'proximas': ('usp_deudas_proximas', [dias, buscar, id_ciclo], (),
+                     ('ALUMNA', 'CICLO', 'FECHAINICIO', 'FECHAFIN', 'DIAS')),
+        'ventas': ('usp_deudas_ventas', [buscar, id_ciclo, _tipo_venta(params)], ('PRECIO', 'PAGADO', 'SALDO'),
+                   ('NUMERO', 'FECHA', 'ALUMNA', 'TIPO', 'PRODUCTO', 'PRECIO', 'PAGADO', 'SALDO')),
+    }
+    if seccion not in procedimientos:
+        raise ValueError('Sección no válida')
+    nombre, argumentos, sumables, ordenables = procedimientos[seccion]
+    with connection.cursor() as cursor:
+        filas = _sin_orden(sp.call_simple(cursor, nombre, argumentos + _orden_params(params, ordenables)))
+    totales = {clave: round(sum(float(f.get(clave) or 0) for f in filas), 2) for clave in sumables}
+    total = len(filas)
+    pagina, tamanio = 1, total
+    if str(params.get('todo') or '') != '1':
+        pagina, tamanio = _paginacion_simple(params)
+        filas = filas[(pagina - 1) * tamanio: pagina * tamanio]
+    return {'filas': filas, 'totales': totales, 'total': total, 'pagina': pagina, 'tamanio': tamanio}
 
 
 TABLAS_TRAZA = {
@@ -806,12 +837,12 @@ def reporte(tipo, params):
         raise ValueError('Reporte no disponible')
     titulo, columnas = REPORTES[tipo]
     with connection.cursor() as cursor:
-        filas = jsonable(sp.call_simple(cursor, 'usp_reporte', [
+        filas = _sin_orden(sp.call_simple(cursor, 'usp_reporte', [
             tipo,
             _fecha_param(params.get('desde')),
             _fecha_param(params.get('hasta')),
             params.get('idciclo') or None,
-        ]))
+        ] + _orden_params(params, [clave for clave, _, _ in columnas])))
     sumables = [f for f in filas if f.get('ESTADO') == 'Emitido'] if tipo == 'ventas' else filas
     totales = {}
     for clave, _, formato in columnas:
@@ -819,20 +850,55 @@ def reporte(tipo, params):
             continue
         if formato == _M or (formato == _E and clave in ('CANTIDAD', 'PRESENTES', 'FALTAS', 'REGISTROS')):
             totales[clave] = round(sum(f.get(clave) or 0 for f in sumables), 2)
+    total = len(filas)
+    pagina, tamanio = 1, total
+    if str(params.get('todo') or '') != '1':
+        pagina, tamanio = _paginacion_simple(params)
+        filas = filas[(pagina - 1) * tamanio: pagina * tamanio]
     return {
         'tipo': tipo,
         'titulo': titulo,
         'columnas': [{'key': k, 'label': l, 'formato': f} for k, l, f in columnas],
         'filas': filas,
         'totales': totales,
+        'total': total,
+        'pagina': pagina,
+        'tamanio': tamanio,
     }
+
+
+def _orden_params(params, permitidas):
+    columna = str(params.get('ordenarPor') or '').strip().upper()
+    if columna not in permitidas:
+        return ['', '']
+    direccion = 'DESC' if str(params.get('direccion') or '').strip().upper() == 'DESC' else 'ASC'
+    return [columna, direccion]
+
+
+def _sin_orden(filas):
+    filas = jsonable(filas)
+    for fila in filas:
+        fila.pop('ORDEN', None)
+    return filas
+
+
+def _paginacion_simple(params):
+    try:
+        pagina = max(1, int(params.get('pagina') or 1))
+    except (TypeError, ValueError):
+        pagina = 1
+    try:
+        tamanio = int(params.get('tamanio') or 10)
+    except (TypeError, ValueError):
+        tamanio = 10
+    return pagina, tamanio if tamanio in (10, 20, 30, 50) else 10
 
 
 def avisos(funciones):
     mensajes = []
     hoy = date.today().strftime('%d%m%Y')
     if 'VER_SALDOS' in funciones:
-        datos = deudas({'dias': 7})['totales']
+        datos = deudas_conteo({'dias': 7})
         if datos['vencidas']:
             mensajes.append({
                 'IDMENSAJE': 'deudas-vencidas', 'TITULO': 'Mensualidades vencidas', 'CARGO': 'Deudas',
@@ -846,7 +912,7 @@ def avisos(funciones):
                 'MENSAJE': f"{datos['proximas']} alumnas terminan su periodo en los próximos 7 días.",
                 'PAGINA': 'deudas',
             })
-    del_dia = [c for c in cumpleanos({})['data'] if c['FALTAN'] == 0]
+    del_dia = cumpleanos({'seccion': 'hoy'})
     if del_dia:
         mensajes.append({
             'IDMENSAJE': 'cumpleanos-hoy', 'TITULO': 'Cumpleaños de hoy', 'CARGO': 'Cumpleaños',
@@ -859,40 +925,13 @@ def avisos(funciones):
 def catalogos():
     with connection.cursor() as cursor:
         cursor.execute("SELECT IDCICLO, NOMBRE FROM CICLO WHERE ACTIVO = 1 ORDER BY NOMBRE")
-        ciclos = [{'value': a, 'label': b} for a, b in cursor.fetchall()]
+        ciclos = [{'value': a, 'label': (b or '').upper()} for a, b in cursor.fetchall()]
         cursor.execute(
             "SELECT IDTURNO, NOMBRE, HORAINICIO, HORAFIN FROM TURNO WHERE ACTIVO = 1 ORDER BY HORAINICIO, NOMBRE"
         )
         turnos = [
             {'value': a, 'label': f'{b} ({c} - {d})'}
             for a, b, c, d in cursor.fetchall()
-        ]
-        cursor.execute(
-            """
-            SELECT IDALUMNA, NOMBRE, IFNULL(DNI, ''), IFNULL(EMAIL, ''), IFNULL(TELEFONO, '')
-            FROM ALUMNA WHERE ESTADO <> 'Retirada' ORDER BY NOMBRE
-            """
-        )
-        alumnas = [
-            {'value': a, 'label': b, 'dni': c, 'email': d, 'telefono': e}
-            for a, b, c, d, e in cursor.fetchall()
-        ]
-        cursor.execute(
-            """
-            SELECT m.IDMENSUALIDAD, a.IDALUMNA, a.NOMBRE, m.FECHAINICIO, m.FECHAFIN, m.ESTADO, m.MONTO,
-                   GREATEST(m.MONTO - IFNULL(pg.PAGADO, 0), 0) AS SALDO
-            FROM MENSUALIDAD m
-            INNER JOIN ALUMNA a ON a.IDALUMNA = m.IDALUMNA
-            LEFT JOIN (SELECT IDMENSUALIDAD, SUM(MONTO) AS PAGADO FROM PAGO GROUP BY IDMENSUALIDAD) pg
-                   ON pg.IDMENSUALIDAD = m.IDMENSUALIDAD
-            WHERE m.ESTADO <> 'Inactivo'
-            ORDER BY STR_TO_DATE(m.FECHAINICIO, '%d%m%Y') DESC
-            """
-        )
-        mensualidades = [
-            {'value': a, 'idalumna': b, 'nombre': c, 'inicio': d, 'fin': e, 'estado': f,
-             'monto': float(g or 0), 'saldo': float(h or 0)}
-            for a, b, c, d, e, f, g, h in cursor.fetchall()
         ]
         cursor.execute(
             """
@@ -910,8 +949,6 @@ def catalogos():
     return {
         'ciclos': ciclos,
         'turnos': turnos,
-        'alumnas': alumnas,
-        'mensualidades': mensualidades,
         'promociones': promociones,
         'tiposUsuario': tipos,
         'funciones': [{'value': c, 'label': l} for c, l in FUNCIONES],
@@ -928,5 +965,5 @@ OPERACIONES = {
     'ventas': (listar_ventas, obtener_venta, insertar_venta, actualizar_venta, eliminar_venta),
     'egresos': (listar_egresos, obtener_egreso, insertar_egreso, actualizar_egreso, eliminar_egreso),
     'promociones': (listar_promociones, obtener_promocion, insertar_promocion, actualizar_promocion, eliminar_promocion),
-    'auditoria': (listar_auditoria, None, None, None, None),
+    'auditoria': (listar_auditoria, obtener_auditoria, None, None, None),
 }

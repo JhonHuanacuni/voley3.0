@@ -104,6 +104,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    fetch("/api/logout/", { method: "POST" }).catch(() => {});
     setIsAuthenticated(false);
     setActivePage("dashboard");
     setRole("");
@@ -152,7 +153,7 @@ export default function App() {
       {Vista
         ? <Vista role={role} idusuario={idusuario} onChangePage={setActivePage} />
         : <CrudPage key={activePage} config={page.config} />}
-      {estadoCuenta && <EstadoCuentaModal idAlumna={estadoCuenta} onClose={() => setEstadoCuenta(null)} />}
+      {estadoCuenta && <EstadoCuentaModal key={estadoCuenta} idAlumna={estadoCuenta} onClose={() => setEstadoCuenta(null)} />}
     </Layout>
   );
 }

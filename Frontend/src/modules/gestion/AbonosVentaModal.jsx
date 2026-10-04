@@ -4,7 +4,8 @@ import { faBan, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
 import { dbToView, hoyInput } from "../../utils/fecha";
 import { puede } from "../../utils/sesion";
-import TablaGestion, { dinero } from "./TablaGestion";
+import TablaGestion from "./TablaGestion";
+import { dinero } from "./tablaGestionUtils";
 import "../../styles/mantenedor.css";
 import "./gestion.css";
 
@@ -131,7 +132,7 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
         <div className="estado-cuenta-head">
           <div>
             <h2>Abonos · Recibo {venta.NUMERO || idVenta}</h2>
-            {data && <p>{venta.NOMBRE} · {venta.PRODUCTO}</p>}
+            {data && <p>{String(venta.NOMBRE || "").toUpperCase()} · {venta.PRODUCTO}</p>}
           </div>
           <button type="button" className="estado-cuenta-cerrar" onClick={onClose} aria-label="Cerrar">
             <FontAwesomeIcon icon={faXmark} />

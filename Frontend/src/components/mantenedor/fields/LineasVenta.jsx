@@ -26,23 +26,19 @@ export default function LineasVenta({ value, productos = [], tallas = [], disabl
 
   return (
     <div className="lineas-venta">
-      <datalist id="lineas-venta-productos">
-        {productos.map((producto) => (
-          <option key={producto} value={producto} />
-        ))}
-      </datalist>
       {lineas.map((linea, indice) => (
         <div className="lineas-venta-fila" key={indice}>
-          <input
-            type="text"
-            list="lineas-venta-productos"
+          <select
             aria-label={`Artículo ${indice + 1}`}
-            placeholder="Artículo (escribe o elige)"
-            maxLength={150}
             value={linea.PRODUCTO}
             disabled={disabled}
             onChange={(event) => actualizar(indice, "PRODUCTO", event.target.value)}
-          />
+          >
+            <option value="" hidden>ARTÍCULO</option>
+            {(linea.PRODUCTO && !productos.includes(linea.PRODUCTO) ? [linea.PRODUCTO, ...productos] : productos).map((producto) => (
+              <option key={producto} value={producto}>{producto}</option>
+            ))}
+          </select>
           <select
             aria-label={`Talla ${indice + 1}`}
             value={linea.TALLA}

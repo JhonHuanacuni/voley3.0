@@ -1,0 +1,1365 @@
+USE `VoleyDB`;
+
+-- Auditoría completa: cada INSERT, UPDATE y DELETE de las tablas del sistema queda en AUDITORIA
+-- con la foto anterior/nueva, los campos modificados y el contexto de la petición.
+-- El backend fija por conexión: @app_usuario, @app_modulo, @app_procedimiento, @app_metodo,
+-- @app_ruta, @app_ip, @app_navegador y @app_solicitud. Sin ellas (cambios hechos directo en la base)
+-- el movimiento igual se registra con el usuario de MySQL en USUARIOBD.
+-- Requiere 07_esquema_requerimientos.sql. Se puede ejecutar varias veces sin perder datos.
+-- Si se agrega una columna a una tabla, hay que incluirla en el JSON_OBJECT de sus triggers.
+
+DROP PROCEDURE IF EXISTS usp_tmp_columna;
+DROP PROCEDURE IF EXISTS usp_tmp_indice;
+
+DELIMITER $$
+
+CREATE PROCEDURE usp_tmp_columna(IN p_Tabla VARCHAR(64), IN p_Columna VARCHAR(64), IN p_Definicion VARCHAR(300))
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_Tabla AND COLUMN_NAME = p_Columna) THEN
+        SET @sql_tmp = CONCAT('ALTER TABLE ', p_Tabla, ' ADD COLUMN ', p_Columna, ' ', p_Definicion);
+        PREPARE st FROM @sql_tmp;
+        EXECUTE st;
+        DEALLOCATE PREPARE st;
+    END IF;
+END$$
+
+CREATE PROCEDURE usp_tmp_indice(IN p_Tabla VARCHAR(64), IN p_Indice VARCHAR(64), IN p_Columnas VARCHAR(200))
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = p_Tabla AND INDEX_NAME = p_Indice) THEN
+        SET @sql_tmp = CONCAT('CREATE INDEX ', p_Indice, ' ON ', p_Tabla, ' (', p_Columnas, ')');
+        PREPARE st FROM @sql_tmp;
+        EXECUTE st;
+        DEALLOCATE PREPARE st;
+    END IF;
+END$$
+
+DELIMITER ;
+
+ALTER TABLE AUDITORIA MODIFY ACCION VARCHAR(30) NOT NULL;
+CALL usp_tmp_columna('AUDITORIA', 'IDALUMNA', 'VARCHAR(50) NULL AFTER IDREGISTRO');
+CALL usp_tmp_columna('AUDITORIA', 'OPERACION', 'VARCHAR(10) NOT NULL DEFAULT ''EVENTO'' AFTER IDALUMNA');
+CALL usp_tmp_columna('AUDITORIA', 'FECHAHORA', 'DATETIME(3) NULL AFTER HORA');
+CALL usp_tmp_columna('AUDITORIA', 'CAMPOS', 'VARCHAR(1000) NULL AFTER DETALLE');
+CALL usp_tmp_columna('AUDITORIA', 'VALORANTERIOR', 'JSON NULL AFTER CAMPOS');
+CALL usp_tmp_columna('AUDITORIA', 'VALORNUEVO', 'JSON NULL AFTER VALORANTERIOR');
+CALL usp_tmp_columna('AUDITORIA', 'MODULO', 'VARCHAR(60) NULL AFTER VALORNUEVO');
+CALL usp_tmp_columna('AUDITORIA', 'PROCEDIMIENTO', 'VARCHAR(100) NULL AFTER MODULO');
+CALL usp_tmp_columna('AUDITORIA', 'METODO', 'VARCHAR(10) NULL AFTER PROCEDIMIENTO');
+CALL usp_tmp_columna('AUDITORIA', 'RUTA', 'VARCHAR(255) NULL AFTER METODO');
+CALL usp_tmp_columna('AUDITORIA', 'IP', 'VARCHAR(45) NULL AFTER RUTA');
+CALL usp_tmp_columna('AUDITORIA', 'NAVEGADOR', 'VARCHAR(255) NULL AFTER IP');
+CALL usp_tmp_columna('AUDITORIA', 'SOLICITUD', 'VARCHAR(36) NULL AFTER NAVEGADOR');
+CALL usp_tmp_columna('AUDITORIA', 'USUARIOBD', 'VARCHAR(100) NULL AFTER SOLICITUD');
+CALL usp_tmp_columna('AUDITORIA', 'CONEXION', 'BIGINT UNSIGNED NULL AFTER USUARIOBD');
+
+CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_REG', 'TABLA, IDREGISTRO');
+CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_ALU', 'IDALUMNA');
+CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_FECHAHORA', 'FECHAHORA');
+CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_USUARIO', 'IDUSUARIO');
+CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_SOLICITUD', 'SOLICITUD');
+
+DROP PROCEDURE IF EXISTS usp_tmp_columna;
+DROP PROCEDURE IF EXISTS usp_tmp_indice;
+
+-- El correlativo pasa a 10 dígitos para que el orden por IDAUDITORIA siga siendo cronológico.
+UPDATE AUDITORIA
+   SET IDAUDITORIA = CONCAT('AUD', LPAD(SUBSTRING(IDAUDITORIA, 4), 10, '0'))
+ WHERE IDAUDITORIA REGEXP '^AUD[0-9]+$' AND CHAR_LENGTH(IDAUDITORIA) < 13;
+
+UPDATE AUDITORIA
+   SET FECHAHORA = STR_TO_DATE(CONCAT(FECHA, ' ', HORA), '%d%m%Y %H:%i:%s')
+ WHERE FECHAHORA IS NULL;
+
+DROP PROCEDURE IF EXISTS usp_auditoria_movimiento;
+DROP PROCEDURE IF EXISTS usp_auditoria_registrar;
+DROP PROCEDURE IF EXISTS usp_auditoria_insertar;
+DROP PROCEDURE IF EXISTS usp_auditoria_listar;
+DROP PROCEDURE IF EXISTS usp_auditoria_obtener;
+
+DROP TRIGGER IF EXISTS trg_alumna_ai;
+DROP TRIGGER IF EXISTS trg_alumna_au;
+DROP TRIGGER IF EXISTS trg_alumna_ad;
+DROP TRIGGER IF EXISTS trg_mensualidad_ai;
+DROP TRIGGER IF EXISTS trg_mensualidad_au;
+DROP TRIGGER IF EXISTS trg_mensualidad_ad;
+DROP TRIGGER IF EXISTS trg_pago_ai;
+DROP TRIGGER IF EXISTS trg_pago_au;
+DROP TRIGGER IF EXISTS trg_pago_ad;
+DROP TRIGGER IF EXISTS trg_asistencia_ai;
+DROP TRIGGER IF EXISTS trg_asistencia_au;
+DROP TRIGGER IF EXISTS trg_asistencia_ad;
+DROP TRIGGER IF EXISTS trg_venta_ai;
+DROP TRIGGER IF EXISTS trg_venta_au;
+DROP TRIGGER IF EXISTS trg_venta_ad;
+DROP TRIGGER IF EXISTS trg_venta_detalle_ai;
+DROP TRIGGER IF EXISTS trg_venta_detalle_au;
+DROP TRIGGER IF EXISTS trg_venta_detalle_ad;
+DROP TRIGGER IF EXISTS trg_venta_abono_ai;
+DROP TRIGGER IF EXISTS trg_venta_abono_au;
+DROP TRIGGER IF EXISTS trg_venta_abono_ad;
+DROP TRIGGER IF EXISTS trg_egreso_ai;
+DROP TRIGGER IF EXISTS trg_egreso_au;
+DROP TRIGGER IF EXISTS trg_egreso_ad;
+DROP TRIGGER IF EXISTS trg_promocion_ai;
+DROP TRIGGER IF EXISTS trg_promocion_au;
+DROP TRIGGER IF EXISTS trg_promocion_ad;
+DROP TRIGGER IF EXISTS trg_ciclo_ai;
+DROP TRIGGER IF EXISTS trg_ciclo_au;
+DROP TRIGGER IF EXISTS trg_ciclo_ad;
+DROP TRIGGER IF EXISTS trg_turno_ai;
+DROP TRIGGER IF EXISTS trg_turno_au;
+DROP TRIGGER IF EXISTS trg_turno_ad;
+DROP TRIGGER IF EXISTS trg_usuario_ai;
+DROP TRIGGER IF EXISTS trg_usuario_au;
+DROP TRIGGER IF EXISTS trg_usuario_ad;
+DROP TRIGGER IF EXISTS trg_usuario_funcion_ai;
+DROP TRIGGER IF EXISTS trg_usuario_funcion_au;
+DROP TRIGGER IF EXISTS trg_usuario_funcion_ad;
+DROP TRIGGER IF EXISTS trg_tipousuario_ai;
+DROP TRIGGER IF EXISTS trg_tipousuario_au;
+DROP TRIGGER IF EXISTS trg_tipousuario_ad;
+DROP TRIGGER IF EXISTS trg_modulo_ai;
+DROP TRIGGER IF EXISTS trg_modulo_au;
+DROP TRIGGER IF EXISTS trg_modulo_ad;
+DROP TRIGGER IF EXISTS trg_submodulo_ai;
+DROP TRIGGER IF EXISTS trg_submodulo_au;
+DROP TRIGGER IF EXISTS trg_submodulo_ad;
+DROP TRIGGER IF EXISTS trg_tipo_permiso_ai;
+DROP TRIGGER IF EXISTS trg_tipo_permiso_au;
+DROP TRIGGER IF EXISTS trg_tipo_permiso_ad;
+DROP TRIGGER IF EXISTS trg_grupo_modulo_ai;
+DROP TRIGGER IF EXISTS trg_grupo_modulo_au;
+DROP TRIGGER IF EXISTS trg_grupo_modulo_ad;
+DROP TRIGGER IF EXISTS trg_grupo_submodulo_excluido_ai;
+DROP TRIGGER IF EXISTS trg_grupo_submodulo_excluido_au;
+DROP TRIGGER IF EXISTS trg_grupo_submodulo_excluido_ad;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_ai;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_au;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_ad;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_excluido_ai;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_excluido_au;
+DROP TRIGGER IF EXISTS trg_usuario_modulo_excluido_ad;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_excluido_ai;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_excluido_au;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_excluido_ad;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_incluido_ai;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_incluido_au;
+DROP TRIGGER IF EXISTS trg_usuario_submodulo_incluido_ad;
+
+DELIMITER $$
+
+-- p_Operacion: INSERT, UPDATE, DELETE, EVENTO (acción de negocio) o LOGIN.
+-- En UPDATE solo se guardan los campos que cambiaron; si no cambió ninguno no se registra nada.
+CREATE PROCEDURE usp_auditoria_movimiento(
+    IN p_Tabla VARCHAR(100), IN p_IdRegistro VARCHAR(100), IN p_IdAlumna VARCHAR(50),
+    IN p_Operacion VARCHAR(10), IN p_Accion VARCHAR(30), IN p_Detalle VARCHAR(1000),
+    IN p_Antes JSON, IN p_Despues JSON, IN p_IdUsuario VARCHAR(50)
+)
+proc: BEGIN
+    DECLARE v_numero BIGINT UNSIGNED DEFAULT 0;
+    DECLARE v_ahora DATETIME(3) DEFAULT NOW(3);
+    DECLARE v_antes JSON DEFAULT p_Antes;
+    DECLARE v_despues JSON DEFAULT p_Despues;
+    DECLARE v_campos VARCHAR(1000) DEFAULT NULL;
+    DECLARE v_claves JSON;
+    DECLARE v_clave VARCHAR(64);
+    DECLARE v_ruta VARCHAR(80);
+    DECLARE v_i INT DEFAULT 0;
+    DECLARE v_total INT DEFAULT 0;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_numero = 0;
+
+    IF p_Antes IS NOT NULL AND p_Despues IS NOT NULL THEN
+        SET v_claves = JSON_KEYS(p_Despues);
+        SET v_total = JSON_LENGTH(v_claves);
+        SET v_antes = JSON_OBJECT();
+        SET v_despues = JSON_OBJECT();
+        WHILE v_i < v_total DO
+            SET v_clave = JSON_UNQUOTE(JSON_EXTRACT(v_claves, CONCAT('$[', v_i, ']')));
+            SET v_ruta = CONCAT('$."', v_clave, '"');
+            IF NOT (JSON_EXTRACT(p_Antes, v_ruta) <=> JSON_EXTRACT(p_Despues, v_ruta)) THEN
+                SET v_campos = CONCAT_WS(', ', v_campos, v_clave);
+                SET v_antes = JSON_SET(v_antes, v_ruta, JSON_EXTRACT(p_Antes, v_ruta));
+                SET v_despues = JSON_SET(v_despues, v_ruta, JSON_EXTRACT(p_Despues, v_ruta));
+            END IF;
+            SET v_i = v_i + 1;
+        END WHILE;
+        IF v_campos IS NULL THEN
+            LEAVE proc;
+        END IF;
+    END IF;
+
+    SELECT CAST(SUBSTRING(IDAUDITORIA, 4) AS UNSIGNED) INTO v_numero
+      FROM AUDITORIA ORDER BY IDAUDITORIA DESC LIMIT 1 FOR UPDATE;
+
+    INSERT INTO AUDITORIA (
+        IDAUDITORIA, TABLA, IDREGISTRO, IDALUMNA, OPERACION, ACCION, IDUSUARIO, FECHA, HORA, FECHAHORA,
+        DETALLE, CAMPOS, VALORANTERIOR, VALORNUEVO, MODULO, PROCEDIMIENTO, METODO, RUTA, IP, NAVEGADOR,
+        SOLICITUD, USUARIOBD, CONEXION
+    )
+    VALUES (
+        CONCAT('AUD', LPAD(v_numero + 1, 10, '0')), p_Tabla, LEFT(IFNULL(p_IdRegistro, ''), 50), p_IdAlumna,
+        IFNULL(NULLIF(p_Operacion, ''), 'EVENTO'), LEFT(p_Accion, 30),
+        IFNULL(NULLIF(TRIM(IFNULL(p_IdUsuario, '')), ''), NULLIF(TRIM(IFNULL(@app_usuario, '')), '')),
+        DATE_FORMAT(v_ahora, '%d%m%Y'), DATE_FORMAT(v_ahora, '%H:%i:%s'), v_ahora,
+        LEFT(p_Detalle, 500), v_campos, v_antes, v_despues,
+        LEFT(NULLIF(@app_modulo, ''), 60), LEFT(NULLIF(@app_procedimiento, ''), 100),
+        LEFT(NULLIF(@app_metodo, ''), 10), LEFT(NULLIF(@app_ruta, ''), 255),
+        LEFT(NULLIF(@app_ip, ''), 45), LEFT(NULLIF(@app_navegador, ''), 255),
+        LEFT(NULLIF(@app_solicitud, ''), 36), LEFT(USER(), 100), CONNECTION_ID()
+    );
+END$$
+
+-- Acciones de negocio desde otros procedimientos (abonos, permisos).
+CREATE PROCEDURE usp_auditoria_registrar(
+    IN p_Tabla VARCHAR(100), IN p_IdRegistro VARCHAR(50), IN p_IdAlumna VARCHAR(50),
+    IN p_Accion VARCHAR(30), IN p_Detalle VARCHAR(500)
+)
+BEGIN
+    CALL usp_auditoria_movimiento(p_Tabla, p_IdRegistro, p_IdAlumna, 'EVENTO', p_Accion, p_Detalle, NULL, NULL, NULL);
+END$$
+
+CREATE PROCEDURE usp_auditoria_insertar(
+    IN p_Tabla VARCHAR(100), IN p_IdRegistro VARCHAR(50), IN p_Accion VARCHAR(30),
+    IN p_IdUsuario VARCHAR(50), IN p_Detalle VARCHAR(500),
+    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
+)
+BEGIN
+    CALL usp_auditoria_movimiento(p_Tabla, p_IdRegistro, NULL, 'EVENTO', p_Accion, p_Detalle, NULL, NULL, p_IdUsuario);
+    SET p_Resultado = 1; SET p_Mensaje = 'OK';
+END$$
+
+-- p_Estado filtra por tabla y p_Operacion por tipo de movimiento.
+CREATE PROCEDURE usp_auditoria_listar(
+    IN p_Buscar VARCHAR(200), IN p_Estado VARCHAR(100),
+    IN p_Desde CHAR(8), IN p_Hasta CHAR(8), IN p_Operacion VARCHAR(10),
+    IN p_OrdenarPor VARCHAR(50), IN p_Direccion VARCHAR(4),
+    IN p_Pagina INT, IN p_Tamanio INT, OUT p_Total INT
+)
+BEGIN
+    DECLARE v_off INT DEFAULT 0;
+    DECLARE v_desde DATETIME;
+    DECLARE v_hasta DATETIME;
+    DECLARE v_buscar VARCHAR(202);
+    IF p_Pagina IS NULL OR p_Pagina < 1 THEN SET p_Pagina = 1; END IF;
+    IF p_Tamanio IS NULL OR p_Tamanio < 1 THEN SET p_Tamanio = 10; END IF;
+    SET v_off = (p_Pagina - 1) * p_Tamanio;
+    SET v_desde = STR_TO_DATE(NULLIF(p_Desde, ''), '%d%m%Y');
+    SET v_hasta = DATE_ADD(STR_TO_DATE(NULLIF(p_Hasta, ''), '%d%m%Y'), INTERVAL 1 DAY);
+    SET v_buscar = IF(IFNULL(TRIM(p_Buscar), '') = '', NULL, CONCAT('%', TRIM(p_Buscar), '%'));
+    SET p_OrdenarPor = UPPER(IFNULL(p_OrdenarPor, ''));
+
+    SELECT COUNT(*) INTO p_Total FROM AUDITORIA
+    WHERE (v_buscar IS NULL OR TABLA LIKE v_buscar OR IFNULL(IDUSUARIO, '') LIKE v_buscar
+           OR IDREGISTRO LIKE v_buscar OR IFNULL(IDALUMNA, '') LIKE v_buscar OR ACCION LIKE v_buscar
+           OR IFNULL(DETALLE, '') LIKE v_buscar OR IFNULL(CAMPOS, '') LIKE v_buscar
+           OR IFNULL(MODULO, '') LIKE v_buscar OR IFNULL(IP, '') LIKE v_buscar
+           OR IFNULL(PROCEDIMIENTO, '') LIKE v_buscar)
+      AND (IFNULL(p_Estado, '') = '' OR TABLA = p_Estado)
+      AND (IFNULL(p_Operacion, '') = '' OR OPERACION = p_Operacion)
+      AND (v_desde IS NULL OR FECHAHORA >= v_desde)
+      AND (v_hasta IS NULL OR FECHAHORA < v_hasta);
+
+    SELECT IDAUDITORIA, FECHA, HORA, IDUSUARIO, OPERACION, TABLA, IDREGISTRO, IDALUMNA, ACCION, DETALLE,
+           CAMPOS, MODULO, PROCEDIMIENTO, METODO, IP, USUARIOBD
+    FROM AUDITORIA
+    WHERE (v_buscar IS NULL OR TABLA LIKE v_buscar OR IFNULL(IDUSUARIO, '') LIKE v_buscar
+           OR IDREGISTRO LIKE v_buscar OR IFNULL(IDALUMNA, '') LIKE v_buscar OR ACCION LIKE v_buscar
+           OR IFNULL(DETALLE, '') LIKE v_buscar OR IFNULL(CAMPOS, '') LIKE v_buscar
+           OR IFNULL(MODULO, '') LIKE v_buscar OR IFNULL(IP, '') LIKE v_buscar
+           OR IFNULL(PROCEDIMIENTO, '') LIKE v_buscar)
+      AND (IFNULL(p_Estado, '') = '' OR TABLA = p_Estado)
+      AND (IFNULL(p_Operacion, '') = '' OR OPERACION = p_Operacion)
+      AND (v_desde IS NULL OR FECHAHORA >= v_desde)
+      AND (v_hasta IS NULL OR FECHAHORA < v_hasta)
+    ORDER BY
+        CASE WHEN p_Direccion = 'ASC' THEN
+            CASE p_OrdenarPor
+                WHEN 'FECHA' THEN DATE_FORMAT(FECHAHORA, '%Y%m%d%H%i%s%f')
+                WHEN 'HORA' THEN HORA
+                WHEN 'IDUSUARIO' THEN IDUSUARIO
+                WHEN 'OPERACION' THEN OPERACION
+                WHEN 'TABLA' THEN TABLA
+                WHEN 'IDREGISTRO' THEN IDREGISTRO
+                WHEN 'ACCION' THEN ACCION
+                WHEN 'MODULO' THEN MODULO
+                WHEN 'IP' THEN IP
+            END
+        END ASC,
+        CASE WHEN p_Direccion = 'DESC' THEN
+            CASE p_OrdenarPor
+                WHEN 'FECHA' THEN DATE_FORMAT(FECHAHORA, '%Y%m%d%H%i%s%f')
+                WHEN 'HORA' THEN HORA
+                WHEN 'IDUSUARIO' THEN IDUSUARIO
+                WHEN 'OPERACION' THEN OPERACION
+                WHEN 'TABLA' THEN TABLA
+                WHEN 'IDREGISTRO' THEN IDREGISTRO
+                WHEN 'ACCION' THEN ACCION
+                WHEN 'MODULO' THEN MODULO
+                WHEN 'IP' THEN IP
+            END
+        END DESC,
+        IDAUDITORIA DESC
+    LIMIT v_off, p_Tamanio;
+END$$
+
+CREATE PROCEDURE usp_auditoria_obtener(IN p_Id VARCHAR(50))
+BEGIN
+    SELECT IDAUDITORIA, FECHA, HORA, IDUSUARIO, OPERACION, TABLA, IDREGISTRO, IDALUMNA, ACCION, DETALLE,
+           CAMPOS, VALORANTERIOR, VALORNUEVO, MODULO, PROCEDIMIENTO, METODO, RUTA, IP, NAVEGADOR,
+           SOLICITUD, USUARIOBD, CONEXION
+    FROM AUDITORIA WHERE IDAUDITORIA = p_Id;
+END$$
+
+CREATE TRIGGER trg_alumna_ai AFTER INSERT ON ALUMNA FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDALUMNA', NEW.IDALUMNA, 'NOMBRE', NEW.NOMBRE, 'EDAD', NEW.EDAD, 'DNI', NEW.DNI,
+            'EMAIL', NEW.EMAIL, 'TELEFONO', NEW.TELEFONO, 'GENERO', NEW.GENERO,
+            'IDCICLO', NEW.IDCICLO, 'CONDICION', NEW.CONDICION, 'COLEGIO', NEW.COLEGIO,
+            'TALLA', NEW.TALLA, 'SUFREDE', NEW.SUFREDE, 'COMOENTERO', NEW.COMOENTERO,
+            'UNIFORMEENTREGADO', NEW.UNIFORMEENTREGADO, 'APODERADO', NEW.APODERADO,
+            'DNIAPODERADO', NEW.DNIAPODERADO, 'FECHANACAPODERADO', NEW.FECHANACAPODERADO,
+            'GENEROAPODERADO', NEW.GENEROAPODERADO, 'TELAPODERADO', NEW.TELAPODERADO,
+            'DIRECCION', NEW.DIRECCION, 'IDTURNO', NEW.IDTURNO, 'ESTADO', NEW.ESTADO,
+            'MOTIVORETIRO', NEW.MOTIVORETIRO, 'FECHARETIRO', NEW.FECHARETIRO,
+            'MENSUALIDAD', NEW.MENSUALIDAD, 'FECHAINSCRIPCION', NEW.FECHAINSCRIPCION,
+            'INICIOMENSUALIDAD', NEW.INICIOMENSUALIDAD, 'FINMENSUALIDAD', NEW.FINMENSUALIDAD,
+            'FECHANACIMIENTO', NEW.FECHANACIMIENTO, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('ALUMNA', NEW.IDALUMNA, NEW.IDALUMNA, 'INSERT', 'Matrícula',
+        CONCAT('Matrícula de ', NEW.NOMBRE,
+               IF(NEW.FECHAINSCRIPCION IS NULL, '', CONCAT(' con inscripción del ', fn_fecha_vista(NEW.FECHAINSCRIPCION)))),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_alumna_au AFTER UPDATE ON ALUMNA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    DECLARE v_accion VARCHAR(30);
+    SET v_antes = JSON_OBJECT(
+            'IDALUMNA', OLD.IDALUMNA, 'NOMBRE', OLD.NOMBRE, 'EDAD', OLD.EDAD, 'DNI', OLD.DNI,
+            'EMAIL', OLD.EMAIL, 'TELEFONO', OLD.TELEFONO, 'GENERO', OLD.GENERO,
+            'IDCICLO', OLD.IDCICLO, 'CONDICION', OLD.CONDICION, 'COLEGIO', OLD.COLEGIO,
+            'TALLA', OLD.TALLA, 'SUFREDE', OLD.SUFREDE, 'COMOENTERO', OLD.COMOENTERO,
+            'UNIFORMEENTREGADO', OLD.UNIFORMEENTREGADO, 'APODERADO', OLD.APODERADO,
+            'DNIAPODERADO', OLD.DNIAPODERADO, 'FECHANACAPODERADO', OLD.FECHANACAPODERADO,
+            'GENEROAPODERADO', OLD.GENEROAPODERADO, 'TELAPODERADO', OLD.TELAPODERADO,
+            'DIRECCION', OLD.DIRECCION, 'IDTURNO', OLD.IDTURNO, 'ESTADO', OLD.ESTADO,
+            'MOTIVORETIRO', OLD.MOTIVORETIRO, 'FECHARETIRO', OLD.FECHARETIRO,
+            'MENSUALIDAD', OLD.MENSUALIDAD, 'FECHAINSCRIPCION', OLD.FECHAINSCRIPCION,
+            'INICIOMENSUALIDAD', OLD.INICIOMENSUALIDAD, 'FINMENSUALIDAD', OLD.FINMENSUALIDAD,
+            'FECHANACIMIENTO', OLD.FECHANACIMIENTO, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDALUMNA', NEW.IDALUMNA, 'NOMBRE', NEW.NOMBRE, 'EDAD', NEW.EDAD, 'DNI', NEW.DNI,
+            'EMAIL', NEW.EMAIL, 'TELEFONO', NEW.TELEFONO, 'GENERO', NEW.GENERO,
+            'IDCICLO', NEW.IDCICLO, 'CONDICION', NEW.CONDICION, 'COLEGIO', NEW.COLEGIO,
+            'TALLA', NEW.TALLA, 'SUFREDE', NEW.SUFREDE, 'COMOENTERO', NEW.COMOENTERO,
+            'UNIFORMEENTREGADO', NEW.UNIFORMEENTREGADO, 'APODERADO', NEW.APODERADO,
+            'DNIAPODERADO', NEW.DNIAPODERADO, 'FECHANACAPODERADO', NEW.FECHANACAPODERADO,
+            'GENEROAPODERADO', NEW.GENEROAPODERADO, 'TELAPODERADO', NEW.TELAPODERADO,
+            'DIRECCION', NEW.DIRECCION, 'IDTURNO', NEW.IDTURNO, 'ESTADO', NEW.ESTADO,
+            'MOTIVORETIRO', NEW.MOTIVORETIRO, 'FECHARETIRO', NEW.FECHARETIRO,
+            'MENSUALIDAD', NEW.MENSUALIDAD, 'FECHAINSCRIPCION', NEW.FECHAINSCRIPCION,
+            'INICIOMENSUALIDAD', NEW.INICIOMENSUALIDAD, 'FINMENSUALIDAD', NEW.FINMENSUALIDAD,
+            'FECHANACIMIENTO', NEW.FECHANACIMIENTO, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        SET v_accion = IF(JSON_REMOVE(v_antes, '$.INICIOMENSUALIDAD', '$.FINMENSUALIDAD')
+                         <=> JSON_REMOVE(v_despues, '$.INICIOMENSUALIDAD', '$.FINMENSUALIDAD'), 'Actualizado',
+                       IF(NOT (NEW.ESTADO <=> OLD.ESTADO) AND NEW.ESTADO = 'Retirada', 'Retirado', 'Modificado'));
+        CALL usp_auditoria_movimiento('ALUMNA', NEW.IDALUMNA, NEW.IDALUMNA, 'UPDATE', v_accion,
+            IF(v_accion = 'Actualizado',
+               CONCAT('Vigencia de ', NEW.NOMBRE, ': ', fn_fecha_vista(NEW.INICIOMENSUALIDAD), ' al ', fn_fecha_vista(NEW.FINMENSUALIDAD)),
+               CONCAT('Ficha de ', NEW.NOMBRE,
+                      IF(NEW.ESTADO <=> OLD.ESTADO, '', CONCAT(' · estado ', IFNULL(OLD.ESTADO, ''), ' → ', IFNULL(NEW.ESTADO, ''))),
+                      IF(NEW.IDCICLO <=> OLD.IDCICLO, '', ' · cambio de categoría'))),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_alumna_ad AFTER DELETE ON ALUMNA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDALUMNA', OLD.IDALUMNA, 'NOMBRE', OLD.NOMBRE, 'EDAD', OLD.EDAD, 'DNI', OLD.DNI,
+            'EMAIL', OLD.EMAIL, 'TELEFONO', OLD.TELEFONO, 'GENERO', OLD.GENERO,
+            'IDCICLO', OLD.IDCICLO, 'CONDICION', OLD.CONDICION, 'COLEGIO', OLD.COLEGIO,
+            'TALLA', OLD.TALLA, 'SUFREDE', OLD.SUFREDE, 'COMOENTERO', OLD.COMOENTERO,
+            'UNIFORMEENTREGADO', OLD.UNIFORMEENTREGADO, 'APODERADO', OLD.APODERADO,
+            'DNIAPODERADO', OLD.DNIAPODERADO, 'FECHANACAPODERADO', OLD.FECHANACAPODERADO,
+            'GENEROAPODERADO', OLD.GENEROAPODERADO, 'TELAPODERADO', OLD.TELAPODERADO,
+            'DIRECCION', OLD.DIRECCION, 'IDTURNO', OLD.IDTURNO, 'ESTADO', OLD.ESTADO,
+            'MOTIVORETIRO', OLD.MOTIVORETIRO, 'FECHARETIRO', OLD.FECHARETIRO,
+            'MENSUALIDAD', OLD.MENSUALIDAD, 'FECHAINSCRIPCION', OLD.FECHAINSCRIPCION,
+            'INICIOMENSUALIDAD', OLD.INICIOMENSUALIDAD, 'FINMENSUALIDAD', OLD.FINMENSUALIDAD,
+            'FECHANACIMIENTO', OLD.FECHANACIMIENTO, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('ALUMNA', OLD.IDALUMNA, OLD.IDALUMNA, 'DELETE', 'Eliminado',
+        CONCAT('Alumna ', OLD.NOMBRE),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_mensualidad_ai AFTER INSERT ON MENSUALIDAD FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDMENSUALIDAD', NEW.IDMENSUALIDAD, 'IDALUMNA', NEW.IDALUMNA,
+            'FECHAINICIO', NEW.FECHAINICIO, 'FECHAFIN', NEW.FECHAFIN, 'MONTO', NEW.MONTO,
+            'MONTOREGULAR', NEW.MONTOREGULAR, 'ESTADO', NEW.ESTADO, 'IDRENOVADA', NEW.IDRENOVADA,
+            'IDPROMOCION', NEW.IDPROMOCION, 'NOTAS', NEW.NOTAS, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('MENSUALIDAD', NEW.IDMENSUALIDAD, NEW.IDALUMNA, 'INSERT', 'Registrado',
+        CONCAT(IF(NEW.ESTADO = 'Inactivo', 'Periodo inactivo de ', 'Mensualidad de '),
+               IFNULL((SELECT NOMBRE FROM ALUMNA WHERE IDALUMNA = NEW.IDALUMNA), NEW.IDALUMNA),
+               ' del ', fn_fecha_vista(NEW.FECHAINICIO), ' al ', fn_fecha_vista(NEW.FECHAFIN),
+               ' por S/ ', FORMAT(NEW.MONTO, 2),
+               IF(NEW.IDRENOVADA IS NULL, '', CONCAT(' (renovación de ', NEW.IDRENOVADA, ')'))),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_mensualidad_au AFTER UPDATE ON MENSUALIDAD FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    DECLARE v_accion VARCHAR(30);
+    SET v_antes = JSON_OBJECT(
+            'IDMENSUALIDAD', OLD.IDMENSUALIDAD, 'IDALUMNA', OLD.IDALUMNA,
+            'FECHAINICIO', OLD.FECHAINICIO, 'FECHAFIN', OLD.FECHAFIN, 'MONTO', OLD.MONTO,
+            'MONTOREGULAR', OLD.MONTOREGULAR, 'ESTADO', OLD.ESTADO, 'IDRENOVADA', OLD.IDRENOVADA,
+            'IDPROMOCION', OLD.IDPROMOCION, 'NOTAS', OLD.NOTAS, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDMENSUALIDAD', NEW.IDMENSUALIDAD, 'IDALUMNA', NEW.IDALUMNA,
+            'FECHAINICIO', NEW.FECHAINICIO, 'FECHAFIN', NEW.FECHAFIN, 'MONTO', NEW.MONTO,
+            'MONTOREGULAR', NEW.MONTOREGULAR, 'ESTADO', NEW.ESTADO, 'IDRENOVADA', NEW.IDRENOVADA,
+            'IDPROMOCION', NEW.IDPROMOCION, 'NOTAS', NEW.NOTAS, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        SET v_accion = IF(JSON_REMOVE(v_antes, '$.ESTADO') <=> JSON_REMOVE(v_despues, '$.ESTADO')
+                       AND (NEW.ESTADO = 'Inactivo') <=> (OLD.ESTADO = 'Inactivo'), 'Actualizado', 'Modificado');
+        CALL usp_auditoria_movimiento('MENSUALIDAD', NEW.IDMENSUALIDAD, NEW.IDALUMNA, 'UPDATE', v_accion,
+            CONCAT('Mensualidad del ', fn_fecha_vista(NEW.FECHAINICIO), ' al ', fn_fecha_vista(NEW.FECHAFIN),
+               ' por S/ ', FORMAT(NEW.MONTO, 2),
+               IF(NEW.MONTO <=> OLD.MONTO, '', CONCAT(' (antes S/ ', FORMAT(OLD.MONTO, 2), ')')),
+               IF(NEW.ESTADO <=> OLD.ESTADO, '',
+                  IF((NEW.ESTADO = 'Inactivo') <> (OLD.ESTADO = 'Inactivo'),
+                     IF(NEW.ESTADO = 'Inactivo', ' · marcado como periodo inactivo', ' · reactivado'),
+                     CONCAT(' · estado ', IFNULL(OLD.ESTADO, ''), ' → ', IFNULL(NEW.ESTADO, ''))))),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_mensualidad_ad AFTER DELETE ON MENSUALIDAD FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDMENSUALIDAD', OLD.IDMENSUALIDAD, 'IDALUMNA', OLD.IDALUMNA,
+            'FECHAINICIO', OLD.FECHAINICIO, 'FECHAFIN', OLD.FECHAFIN, 'MONTO', OLD.MONTO,
+            'MONTOREGULAR', OLD.MONTOREGULAR, 'ESTADO', OLD.ESTADO, 'IDRENOVADA', OLD.IDRENOVADA,
+            'IDPROMOCION', OLD.IDPROMOCION, 'NOTAS', OLD.NOTAS, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('MENSUALIDAD', OLD.IDMENSUALIDAD, OLD.IDALUMNA, 'DELETE', 'Eliminado',
+        CONCAT('Mensualidad del ', fn_fecha_vista(OLD.FECHAINICIO), ' al ', fn_fecha_vista(OLD.FECHAFIN),
+               ' por S/ ', FORMAT(OLD.MONTO, 2)),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_pago_ai AFTER INSERT ON PAGO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDPAGO', NEW.IDPAGO, 'IDMENSUALIDAD', NEW.IDMENSUALIDAD, 'IDALUMNA', NEW.IDALUMNA,
+            'FECHA', NEW.FECHA, 'MONTO', NEW.MONTO, 'MEDIO', NEW.MEDIO,
+            'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('PAGO', NEW.IDPAGO, NEW.IDALUMNA, 'INSERT', 'Registrado',
+        CONCAT('Pago de S/ ', FORMAT(NEW.MONTO, 2), ' (', NEW.MEDIO, ') de ',
+               IFNULL((SELECT NOMBRE FROM ALUMNA WHERE IDALUMNA = NEW.IDALUMNA), NEW.IDALUMNA),
+               IFNULL((SELECT CONCAT(' para el periodo ', fn_fecha_vista(FECHAINICIO), ' al ', fn_fecha_vista(FECHAFIN))
+                         FROM MENSUALIDAD WHERE IDMENSUALIDAD = NEW.IDMENSUALIDAD), '')),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_pago_au AFTER UPDATE ON PAGO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDPAGO', OLD.IDPAGO, 'IDMENSUALIDAD', OLD.IDMENSUALIDAD, 'IDALUMNA', OLD.IDALUMNA,
+            'FECHA', OLD.FECHA, 'MONTO', OLD.MONTO, 'MEDIO', OLD.MEDIO,
+            'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDPAGO', NEW.IDPAGO, 'IDMENSUALIDAD', NEW.IDMENSUALIDAD, 'IDALUMNA', NEW.IDALUMNA,
+            'FECHA', NEW.FECHA, 'MONTO', NEW.MONTO, 'MEDIO', NEW.MEDIO,
+            'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('PAGO', NEW.IDPAGO, NEW.IDALUMNA, 'UPDATE', 'Modificado',
+            CONCAT('Pago de S/ ', FORMAT(NEW.MONTO, 2),
+               IF(NEW.MONTO <=> OLD.MONTO, '', CONCAT(' (antes S/ ', FORMAT(OLD.MONTO, 2), ')')),
+               IF(NEW.IDMENSUALIDAD <=> OLD.IDMENSUALIDAD, '', CONCAT(' · cambió de periodo ', IFNULL(OLD.IDMENSUALIDAD, '—'),
+                                                                 ' a ', IFNULL(NEW.IDMENSUALIDAD, '—')))),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_pago_ad AFTER DELETE ON PAGO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDPAGO', OLD.IDPAGO, 'IDMENSUALIDAD', OLD.IDMENSUALIDAD, 'IDALUMNA', OLD.IDALUMNA,
+            'FECHA', OLD.FECHA, 'MONTO', OLD.MONTO, 'MEDIO', OLD.MEDIO,
+            'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('PAGO', OLD.IDPAGO, OLD.IDALUMNA, 'DELETE', 'Eliminado',
+        CONCAT('Pago de S/ ', FORMAT(OLD.MONTO, 2), ' del ', fn_fecha_vista(OLD.FECHA)),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_asistencia_ai AFTER INSERT ON ASISTENCIA FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDASISTENCIA', NEW.IDASISTENCIA, 'IDALUMNA', NEW.IDALUMNA, 'FECHA', NEW.FECHA,
+            'ESTADO', NEW.ESTADO, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('ASISTENCIA', NEW.IDASISTENCIA, NEW.IDALUMNA, 'INSERT', 'Registrado',
+        CONCAT('Asistencia ', IFNULL(NEW.ESTADO, ''), ' de ', IFNULL((SELECT NOMBRE FROM ALUMNA WHERE IDALUMNA = NEW.IDALUMNA), NEW.IDALUMNA), ' el ', fn_fecha_vista(NEW.FECHA)),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_asistencia_au AFTER UPDATE ON ASISTENCIA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDASISTENCIA', OLD.IDASISTENCIA, 'IDALUMNA', OLD.IDALUMNA, 'FECHA', OLD.FECHA,
+            'ESTADO', OLD.ESTADO, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDASISTENCIA', NEW.IDASISTENCIA, 'IDALUMNA', NEW.IDALUMNA, 'FECHA', NEW.FECHA,
+            'ESTADO', NEW.ESTADO, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('ASISTENCIA', NEW.IDASISTENCIA, NEW.IDALUMNA, 'UPDATE', 'Modificado',
+            CONCAT('Asistencia ', IFNULL(NEW.ESTADO, ''), ' de ', IFNULL((SELECT NOMBRE FROM ALUMNA WHERE IDALUMNA = NEW.IDALUMNA), NEW.IDALUMNA), ' el ', fn_fecha_vista(NEW.FECHA)),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_asistencia_ad AFTER DELETE ON ASISTENCIA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDASISTENCIA', OLD.IDASISTENCIA, 'IDALUMNA', OLD.IDALUMNA, 'FECHA', OLD.FECHA,
+            'ESTADO', OLD.ESTADO, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('ASISTENCIA', OLD.IDASISTENCIA, OLD.IDALUMNA, 'DELETE', 'Eliminado',
+        CONCAT('Asistencia ', IFNULL(OLD.ESTADO, ''), ' de ', IFNULL((SELECT NOMBRE FROM ALUMNA WHERE IDALUMNA = OLD.IDALUMNA), OLD.IDALUMNA), ' el ', fn_fecha_vista(OLD.FECHA)),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_ai AFTER INSERT ON VENTA FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDVENTA', NEW.IDVENTA, 'NOMBRE', NEW.NOMBRE, 'IDALUMNA', NEW.IDALUMNA,
+            'PRODUCTO', NEW.PRODUCTO, 'TIPO', NEW.TIPO, 'COMPROBANTE', NEW.COMPROBANTE,
+            'IDTURNO', NEW.IDTURNO, 'TALLA', NEW.TALLA, 'OBSERVACION', NEW.OBSERVACION,
+            'PRECIO', NEW.PRECIO, 'ACUENTA', NEW.ACUENTA, 'MEDIO', NEW.MEDIO, 'FECHA', NEW.FECHA,
+            'ESTADO_RECIBO', NEW.ESTADO_RECIBO, 'USUARIO_EMISION', NEW.USUARIO_EMISION,
+            'FECHA_EMISION', NEW.FECHA_EMISION, 'HORA_EMISION', NEW.HORA_EMISION,
+            'USUARIO_MODIFICACION', NEW.USUARIO_MODIFICACION,
+            'FECHA_MODIFICACION', NEW.FECHA_MODIFICACION, 'HORA_MODIFICACION', NEW.HORA_MODIFICACION,
+            'USUARIO_ANULACION', NEW.USUARIO_ANULACION, 'FECHA_ANULACION', NEW.FECHA_ANULACION,
+            'HORA_ANULACION', NEW.HORA_ANULACION, 'USUARIO_ELIMINACION', NEW.USUARIO_ELIMINACION,
+            'FECHA_ELIMINACION', NEW.FECHA_ELIMINACION, 'HORA_ELIMINACION', NEW.HORA_ELIMINACION);
+    CALL usp_auditoria_movimiento('VENTA', NEW.IDVENTA, NEW.IDALUMNA, 'INSERT', 'Emitido',
+        CONCAT('Recibo ', IFNULL(NEW.COMPROBANTE, NEW.IDVENTA), ' a ', NEW.NOMBRE),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_au AFTER UPDATE ON VENTA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    DECLARE v_accion VARCHAR(30);
+    SET v_antes = JSON_OBJECT(
+            'IDVENTA', OLD.IDVENTA, 'NOMBRE', OLD.NOMBRE, 'IDALUMNA', OLD.IDALUMNA,
+            'PRODUCTO', OLD.PRODUCTO, 'TIPO', OLD.TIPO, 'COMPROBANTE', OLD.COMPROBANTE,
+            'IDTURNO', OLD.IDTURNO, 'TALLA', OLD.TALLA, 'OBSERVACION', OLD.OBSERVACION,
+            'PRECIO', OLD.PRECIO, 'ACUENTA', OLD.ACUENTA, 'MEDIO', OLD.MEDIO, 'FECHA', OLD.FECHA,
+            'ESTADO_RECIBO', OLD.ESTADO_RECIBO, 'USUARIO_EMISION', OLD.USUARIO_EMISION,
+            'FECHA_EMISION', OLD.FECHA_EMISION, 'HORA_EMISION', OLD.HORA_EMISION,
+            'USUARIO_MODIFICACION', OLD.USUARIO_MODIFICACION,
+            'FECHA_MODIFICACION', OLD.FECHA_MODIFICACION, 'HORA_MODIFICACION', OLD.HORA_MODIFICACION,
+            'USUARIO_ANULACION', OLD.USUARIO_ANULACION, 'FECHA_ANULACION', OLD.FECHA_ANULACION,
+            'HORA_ANULACION', OLD.HORA_ANULACION, 'USUARIO_ELIMINACION', OLD.USUARIO_ELIMINACION,
+            'FECHA_ELIMINACION', OLD.FECHA_ELIMINACION, 'HORA_ELIMINACION', OLD.HORA_ELIMINACION);
+    SET v_despues = JSON_OBJECT(
+            'IDVENTA', NEW.IDVENTA, 'NOMBRE', NEW.NOMBRE, 'IDALUMNA', NEW.IDALUMNA,
+            'PRODUCTO', NEW.PRODUCTO, 'TIPO', NEW.TIPO, 'COMPROBANTE', NEW.COMPROBANTE,
+            'IDTURNO', NEW.IDTURNO, 'TALLA', NEW.TALLA, 'OBSERVACION', NEW.OBSERVACION,
+            'PRECIO', NEW.PRECIO, 'ACUENTA', NEW.ACUENTA, 'MEDIO', NEW.MEDIO, 'FECHA', NEW.FECHA,
+            'ESTADO_RECIBO', NEW.ESTADO_RECIBO, 'USUARIO_EMISION', NEW.USUARIO_EMISION,
+            'FECHA_EMISION', NEW.FECHA_EMISION, 'HORA_EMISION', NEW.HORA_EMISION,
+            'USUARIO_MODIFICACION', NEW.USUARIO_MODIFICACION,
+            'FECHA_MODIFICACION', NEW.FECHA_MODIFICACION, 'HORA_MODIFICACION', NEW.HORA_MODIFICACION,
+            'USUARIO_ANULACION', NEW.USUARIO_ANULACION, 'FECHA_ANULACION', NEW.FECHA_ANULACION,
+            'HORA_ANULACION', NEW.HORA_ANULACION, 'USUARIO_ELIMINACION', NEW.USUARIO_ELIMINACION,
+            'FECHA_ELIMINACION', NEW.FECHA_ELIMINACION, 'HORA_ELIMINACION', NEW.HORA_ELIMINACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        SET v_accion = CASE
+            WHEN NOT (NEW.ESTADO_RECIBO <=> OLD.ESTADO_RECIBO) AND NEW.ESTADO_RECIBO IN ('Anulado', 'Eliminado') THEN NEW.ESTADO_RECIBO
+            WHEN NOT (NEW.USUARIO_MODIFICACION <=> OLD.USUARIO_MODIFICACION AND NEW.FECHA_MODIFICACION <=> OLD.FECHA_MODIFICACION
+                      AND NEW.HORA_MODIFICACION <=> OLD.HORA_MODIFICACION) THEN 'Modificado'
+            ELSE 'Actualizado'
+        END;
+        CALL usp_auditoria_movimiento('VENTA', NEW.IDVENTA, NEW.IDALUMNA, 'UPDATE', v_accion,
+            CONCAT('Recibo ', IFNULL(NEW.COMPROBANTE, NEW.IDVENTA), ' · ', NEW.NOMBRE, ' · S/ ', FORMAT(NEW.PRECIO, 2)),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_venta_ad AFTER DELETE ON VENTA FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDVENTA', OLD.IDVENTA, 'NOMBRE', OLD.NOMBRE, 'IDALUMNA', OLD.IDALUMNA,
+            'PRODUCTO', OLD.PRODUCTO, 'TIPO', OLD.TIPO, 'COMPROBANTE', OLD.COMPROBANTE,
+            'IDTURNO', OLD.IDTURNO, 'TALLA', OLD.TALLA, 'OBSERVACION', OLD.OBSERVACION,
+            'PRECIO', OLD.PRECIO, 'ACUENTA', OLD.ACUENTA, 'MEDIO', OLD.MEDIO, 'FECHA', OLD.FECHA,
+            'ESTADO_RECIBO', OLD.ESTADO_RECIBO, 'USUARIO_EMISION', OLD.USUARIO_EMISION,
+            'FECHA_EMISION', OLD.FECHA_EMISION, 'HORA_EMISION', OLD.HORA_EMISION,
+            'USUARIO_MODIFICACION', OLD.USUARIO_MODIFICACION,
+            'FECHA_MODIFICACION', OLD.FECHA_MODIFICACION, 'HORA_MODIFICACION', OLD.HORA_MODIFICACION,
+            'USUARIO_ANULACION', OLD.USUARIO_ANULACION, 'FECHA_ANULACION', OLD.FECHA_ANULACION,
+            'HORA_ANULACION', OLD.HORA_ANULACION, 'USUARIO_ELIMINACION', OLD.USUARIO_ELIMINACION,
+            'FECHA_ELIMINACION', OLD.FECHA_ELIMINACION, 'HORA_ELIMINACION', OLD.HORA_ELIMINACION);
+    CALL usp_auditoria_movimiento('VENTA', OLD.IDVENTA, OLD.IDALUMNA, 'DELETE', 'Eliminado',
+        CONCAT('Recibo ', IFNULL(OLD.COMPROBANTE, OLD.IDVENTA), ' borrado de la base'),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_detalle_ai AFTER INSERT ON VENTA_DETALLE FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDDETALLE', NEW.IDDETALLE, 'IDVENTA', NEW.IDVENTA, 'ORDEN', NEW.ORDEN,
+            'PRODUCTO', NEW.PRODUCTO, 'TALLA', NEW.TALLA, 'PRECIO', NEW.PRECIO);
+    CALL usp_auditoria_movimiento('VENTA_DETALLE', NEW.IDDETALLE, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = NEW.IDVENTA), 'INSERT', 'Registrado',
+        CONCAT('Línea ', NEW.ORDEN, ' de ', NEW.IDVENTA, ': ', IFNULL(NEW.PRODUCTO, ''), ' por S/ ', FORMAT(NEW.PRECIO, 2)),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_detalle_au AFTER UPDATE ON VENTA_DETALLE FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDDETALLE', OLD.IDDETALLE, 'IDVENTA', OLD.IDVENTA, 'ORDEN', OLD.ORDEN,
+            'PRODUCTO', OLD.PRODUCTO, 'TALLA', OLD.TALLA, 'PRECIO', OLD.PRECIO);
+    SET v_despues = JSON_OBJECT(
+            'IDDETALLE', NEW.IDDETALLE, 'IDVENTA', NEW.IDVENTA, 'ORDEN', NEW.ORDEN,
+            'PRODUCTO', NEW.PRODUCTO, 'TALLA', NEW.TALLA, 'PRECIO', NEW.PRECIO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('VENTA_DETALLE', NEW.IDDETALLE, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = NEW.IDVENTA), 'UPDATE', 'Modificado',
+            CONCAT('Línea ', NEW.ORDEN, ' de ', NEW.IDVENTA, ': ', IFNULL(NEW.PRODUCTO, ''), ' por S/ ', FORMAT(NEW.PRECIO, 2)),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_venta_detalle_ad AFTER DELETE ON VENTA_DETALLE FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDDETALLE', OLD.IDDETALLE, 'IDVENTA', OLD.IDVENTA, 'ORDEN', OLD.ORDEN,
+            'PRODUCTO', OLD.PRODUCTO, 'TALLA', OLD.TALLA, 'PRECIO', OLD.PRECIO);
+    CALL usp_auditoria_movimiento('VENTA_DETALLE', OLD.IDDETALLE, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = OLD.IDVENTA), 'DELETE', 'Eliminado',
+        CONCAT('Línea ', OLD.ORDEN, ' de ', OLD.IDVENTA, ': ', IFNULL(OLD.PRODUCTO, ''), ' por S/ ', FORMAT(OLD.PRECIO, 2)),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_abono_ai AFTER INSERT ON VENTA_ABONO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDABONO', NEW.IDABONO, 'IDVENTA', NEW.IDVENTA, 'FECHA', NEW.FECHA, 'MONTO', NEW.MONTO,
+            'MEDIO', NEW.MEDIO, 'ORIGEN', NEW.ORIGEN, 'OBSERVACION', NEW.OBSERVACION,
+            'IDUSUARIO', NEW.IDUSUARIO, 'FECHAREGISTRO', NEW.FECHAREGISTRO,
+            'HORAREGISTRO', NEW.HORAREGISTRO);
+    CALL usp_auditoria_movimiento('VENTA_ABONO', NEW.IDABONO, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = NEW.IDVENTA), 'INSERT', 'Registrado',
+        CONCAT('Abono ', NEW.ORIGEN, ' de S/ ', FORMAT(NEW.MONTO, 2), ' (', NEW.MEDIO, ') a ', NEW.IDVENTA),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_venta_abono_au AFTER UPDATE ON VENTA_ABONO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDABONO', OLD.IDABONO, 'IDVENTA', OLD.IDVENTA, 'FECHA', OLD.FECHA, 'MONTO', OLD.MONTO,
+            'MEDIO', OLD.MEDIO, 'ORIGEN', OLD.ORIGEN, 'OBSERVACION', OLD.OBSERVACION,
+            'IDUSUARIO', OLD.IDUSUARIO, 'FECHAREGISTRO', OLD.FECHAREGISTRO,
+            'HORAREGISTRO', OLD.HORAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDABONO', NEW.IDABONO, 'IDVENTA', NEW.IDVENTA, 'FECHA', NEW.FECHA, 'MONTO', NEW.MONTO,
+            'MEDIO', NEW.MEDIO, 'ORIGEN', NEW.ORIGEN, 'OBSERVACION', NEW.OBSERVACION,
+            'IDUSUARIO', NEW.IDUSUARIO, 'FECHAREGISTRO', NEW.FECHAREGISTRO,
+            'HORAREGISTRO', NEW.HORAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('VENTA_ABONO', NEW.IDABONO, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = NEW.IDVENTA), 'UPDATE', 'Modificado',
+            CONCAT('Abono ', NEW.ORIGEN, ' de S/ ', FORMAT(NEW.MONTO, 2), ' (', NEW.MEDIO, ') a ', NEW.IDVENTA),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_venta_abono_ad AFTER DELETE ON VENTA_ABONO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDABONO', OLD.IDABONO, 'IDVENTA', OLD.IDVENTA, 'FECHA', OLD.FECHA, 'MONTO', OLD.MONTO,
+            'MEDIO', OLD.MEDIO, 'ORIGEN', OLD.ORIGEN, 'OBSERVACION', OLD.OBSERVACION,
+            'IDUSUARIO', OLD.IDUSUARIO, 'FECHAREGISTRO', OLD.FECHAREGISTRO,
+            'HORAREGISTRO', OLD.HORAREGISTRO);
+    CALL usp_auditoria_movimiento('VENTA_ABONO', OLD.IDABONO, (SELECT IDALUMNA FROM VENTA WHERE IDVENTA = OLD.IDVENTA), 'DELETE', 'Eliminado',
+        CONCAT('Abono ', OLD.ORIGEN, ' de S/ ', FORMAT(OLD.MONTO, 2), ' (', OLD.MEDIO, ') a ', OLD.IDVENTA),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_egreso_ai AFTER INSERT ON EGRESO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDEGRESO', NEW.IDEGRESO, 'FECHA', NEW.FECHA, 'CONCEPTO', NEW.CONCEPTO,
+            'PROVEEDOR', NEW.PROVEEDOR, 'MONTO', NEW.MONTO, 'MEDIO', NEW.MEDIO,
+            'OBSERVACIONES', NEW.OBSERVACIONES, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('EGRESO', NEW.IDEGRESO, NULL, 'INSERT', 'Registrado',
+        CONCAT(NEW.CONCEPTO, ' por S/ ', FORMAT(NEW.MONTO, 2)),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_egreso_au AFTER UPDATE ON EGRESO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDEGRESO', OLD.IDEGRESO, 'FECHA', OLD.FECHA, 'CONCEPTO', OLD.CONCEPTO,
+            'PROVEEDOR', OLD.PROVEEDOR, 'MONTO', OLD.MONTO, 'MEDIO', OLD.MEDIO,
+            'OBSERVACIONES', OLD.OBSERVACIONES, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDEGRESO', NEW.IDEGRESO, 'FECHA', NEW.FECHA, 'CONCEPTO', NEW.CONCEPTO,
+            'PROVEEDOR', NEW.PROVEEDOR, 'MONTO', NEW.MONTO, 'MEDIO', NEW.MEDIO,
+            'OBSERVACIONES', NEW.OBSERVACIONES, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('EGRESO', NEW.IDEGRESO, NULL, 'UPDATE', 'Modificado',
+            CONCAT(NEW.CONCEPTO, ' por S/ ', FORMAT(NEW.MONTO, 2),
+               IF(NEW.MONTO <=> OLD.MONTO, '', CONCAT(' (antes S/ ', FORMAT(OLD.MONTO, 2), ')'))),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_egreso_ad AFTER DELETE ON EGRESO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDEGRESO', OLD.IDEGRESO, 'FECHA', OLD.FECHA, 'CONCEPTO', OLD.CONCEPTO,
+            'PROVEEDOR', OLD.PROVEEDOR, 'MONTO', OLD.MONTO, 'MEDIO', OLD.MEDIO,
+            'OBSERVACIONES', OLD.OBSERVACIONES, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('EGRESO', OLD.IDEGRESO, NULL, 'DELETE', 'Eliminado',
+        CONCAT(OLD.CONCEPTO, ' por S/ ', FORMAT(OLD.MONTO, 2)),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_promocion_ai AFTER INSERT ON PROMOCION FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDPROMOCION', NEW.IDPROMOCION, 'NOMBRE', NEW.NOMBRE, 'TIPO', NEW.TIPO,
+            'MONTOREGULAR', NEW.MONTOREGULAR, 'MONTOPROMOCIONAL', NEW.MONTOPROMOCIONAL,
+            'MESESPROMOCION', NEW.MESESPROMOCION, 'MONTOSIGUIENTES', NEW.MONTOSIGUIENTES,
+            'FECHAINICIO', NEW.FECHAINICIO, 'FECHAFIN', NEW.FECHAFIN, 'CONDICIONES', NEW.CONDICIONES,
+            'ACTIVO', NEW.ACTIVO, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('PROMOCION', NEW.IDPROMOCION, NULL, 'INSERT', 'Registrado',
+        CONCAT('Promoción ', NEW.NOMBRE),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_promocion_au AFTER UPDATE ON PROMOCION FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDPROMOCION', OLD.IDPROMOCION, 'NOMBRE', OLD.NOMBRE, 'TIPO', OLD.TIPO,
+            'MONTOREGULAR', OLD.MONTOREGULAR, 'MONTOPROMOCIONAL', OLD.MONTOPROMOCIONAL,
+            'MESESPROMOCION', OLD.MESESPROMOCION, 'MONTOSIGUIENTES', OLD.MONTOSIGUIENTES,
+            'FECHAINICIO', OLD.FECHAINICIO, 'FECHAFIN', OLD.FECHAFIN, 'CONDICIONES', OLD.CONDICIONES,
+            'ACTIVO', OLD.ACTIVO, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDPROMOCION', NEW.IDPROMOCION, 'NOMBRE', NEW.NOMBRE, 'TIPO', NEW.TIPO,
+            'MONTOREGULAR', NEW.MONTOREGULAR, 'MONTOPROMOCIONAL', NEW.MONTOPROMOCIONAL,
+            'MESESPROMOCION', NEW.MESESPROMOCION, 'MONTOSIGUIENTES', NEW.MONTOSIGUIENTES,
+            'FECHAINICIO', NEW.FECHAINICIO, 'FECHAFIN', NEW.FECHAFIN, 'CONDICIONES', NEW.CONDICIONES,
+            'ACTIVO', NEW.ACTIVO, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('PROMOCION', NEW.IDPROMOCION, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Promoción ', NEW.NOMBRE),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_promocion_ad AFTER DELETE ON PROMOCION FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDPROMOCION', OLD.IDPROMOCION, 'NOMBRE', OLD.NOMBRE, 'TIPO', OLD.TIPO,
+            'MONTOREGULAR', OLD.MONTOREGULAR, 'MONTOPROMOCIONAL', OLD.MONTOPROMOCIONAL,
+            'MESESPROMOCION', OLD.MESESPROMOCION, 'MONTOSIGUIENTES', OLD.MONTOSIGUIENTES,
+            'FECHAINICIO', OLD.FECHAINICIO, 'FECHAFIN', OLD.FECHAFIN, 'CONDICIONES', OLD.CONDICIONES,
+            'ACTIVO', OLD.ACTIVO, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('PROMOCION', OLD.IDPROMOCION, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Promoción ', OLD.NOMBRE),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_ciclo_ai AFTER INSERT ON CICLO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDCICLO', NEW.IDCICLO, 'NOMBRE', NEW.NOMBRE, 'SLUG', NEW.SLUG, 'ACTIVO', NEW.ACTIVO,
+            'ORDEN', NEW.ORDEN, 'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('CICLO', NEW.IDCICLO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Categoría ', NEW.NOMBRE),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_ciclo_au AFTER UPDATE ON CICLO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDCICLO', OLD.IDCICLO, 'NOMBRE', OLD.NOMBRE, 'SLUG', OLD.SLUG, 'ACTIVO', OLD.ACTIVO,
+            'ORDEN', OLD.ORDEN, 'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDCICLO', NEW.IDCICLO, 'NOMBRE', NEW.NOMBRE, 'SLUG', NEW.SLUG, 'ACTIVO', NEW.ACTIVO,
+            'ORDEN', NEW.ORDEN, 'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('CICLO', NEW.IDCICLO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Categoría ', NEW.NOMBRE),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_ciclo_ad AFTER DELETE ON CICLO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDCICLO', OLD.IDCICLO, 'NOMBRE', OLD.NOMBRE, 'SLUG', OLD.SLUG, 'ACTIVO', OLD.ACTIVO,
+            'ORDEN', OLD.ORDEN, 'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('CICLO', OLD.IDCICLO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Categoría ', OLD.NOMBRE),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_turno_ai AFTER INSERT ON TURNO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDTURNO', NEW.IDTURNO, 'NOMBRE', NEW.NOMBRE, 'HORAINICIO', NEW.HORAINICIO,
+            'HORAFIN', NEW.HORAFIN, 'DIASACTIVOS', NEW.DIASACTIVOS, 'ACTIVO', NEW.ACTIVO,
+            'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('TURNO', NEW.IDTURNO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Turno ', NEW.NOMBRE, ' (', IFNULL(NEW.HORAINICIO, ''), ' - ', IFNULL(NEW.HORAFIN, ''), ')'),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_turno_au AFTER UPDATE ON TURNO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTURNO', OLD.IDTURNO, 'NOMBRE', OLD.NOMBRE, 'HORAINICIO', OLD.HORAINICIO,
+            'HORAFIN', OLD.HORAFIN, 'DIASACTIVOS', OLD.DIASACTIVOS, 'ACTIVO', OLD.ACTIVO,
+            'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDTURNO', NEW.IDTURNO, 'NOMBRE', NEW.NOMBRE, 'HORAINICIO', NEW.HORAINICIO,
+            'HORAFIN', NEW.HORAFIN, 'DIASACTIVOS', NEW.DIASACTIVOS, 'ACTIVO', NEW.ACTIVO,
+            'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('TURNO', NEW.IDTURNO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Turno ', NEW.NOMBRE, ' (', IFNULL(NEW.HORAINICIO, ''), ' - ', IFNULL(NEW.HORAFIN, ''), ')'),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_turno_ad AFTER DELETE ON TURNO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTURNO', OLD.IDTURNO, 'NOMBRE', OLD.NOMBRE, 'HORAINICIO', OLD.HORAINICIO,
+            'HORAFIN', OLD.HORAFIN, 'DIASACTIVOS', OLD.DIASACTIVOS, 'ACTIVO', OLD.ACTIVO,
+            'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('TURNO', OLD.IDTURNO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Turno ', OLD.NOMBRE, ' (', IFNULL(OLD.HORAINICIO, ''), ' - ', IFNULL(OLD.HORAFIN, ''), ')'),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_ai AFTER INSERT ON USUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIO', NEW.IDUSUARIO, 'CONTRA', '********', 'NOMBRE', NEW.NOMBRE,
+            'APELLIDO', NEW.APELLIDO, 'DNI', NEW.DNI, 'EMAIL', NEW.EMAIL, 'ESTADO', NEW.ESTADO,
+            'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO);
+    CALL usp_auditoria_movimiento('USUARIO', NEW.IDUSUARIO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Usuario ', NEW.IDUSUARIO, ' (', IFNULL(NEW.NOMBRE, ''), ' ', IFNULL(NEW.APELLIDO, ''), ')'),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_au AFTER UPDATE ON USUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIO', OLD.IDUSUARIO, 'CONTRA', '********', 'NOMBRE', OLD.NOMBRE,
+            'APELLIDO', OLD.APELLIDO, 'DNI', OLD.DNI, 'EMAIL', OLD.EMAIL, 'ESTADO', OLD.ESTADO,
+            'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIO', NEW.IDUSUARIO,
+            'CONTRA', IF(NEW.CONTRA <=> OLD.CONTRA, '********', '******** (cambiada)'),
+            'NOMBRE', NEW.NOMBRE, 'APELLIDO', NEW.APELLIDO, 'DNI', NEW.DNI, 'EMAIL', NEW.EMAIL,
+            'ESTADO', NEW.ESTADO, 'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO', NEW.IDUSUARIO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Usuario ', NEW.IDUSUARIO,
+               IF(NEW.CONTRA <=> OLD.CONTRA, '', ' · cambio de contraseña'),
+               IF(NEW.IDTIPOUSUARIO <=> OLD.IDTIPOUSUARIO, '', ' · cambio de tipo'),
+               IF(NEW.ESTADO <=> OLD.ESTADO, '', CONCAT(' · estado ', NEW.ESTADO))),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_ad AFTER DELETE ON USUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIO', OLD.IDUSUARIO, 'CONTRA', '********', 'NOMBRE', OLD.NOMBRE,
+            'APELLIDO', OLD.APELLIDO, 'DNI', OLD.DNI, 'EMAIL', OLD.EMAIL, 'ESTADO', OLD.ESTADO,
+            'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO);
+    CALL usp_auditoria_movimiento('USUARIO', OLD.IDUSUARIO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Usuario ', OLD.IDUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_funcion_ai AFTER INSERT ON USUARIO_FUNCION FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIO', NEW.IDUSUARIO, 'CODIGO', NEW.CODIGO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_FUNCION', CONCAT(NEW.IDUSUARIO, '|', NEW.CODIGO), NULL, 'INSERT', 'Registrado',
+        CONCAT('Función ', NEW.CODIGO, ' del usuario ', NEW.IDUSUARIO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_funcion_au AFTER UPDATE ON USUARIO_FUNCION FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIO', OLD.IDUSUARIO, 'CODIGO', OLD.CODIGO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIO', NEW.IDUSUARIO, 'CODIGO', NEW.CODIGO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO_FUNCION', CONCAT(NEW.IDUSUARIO, '|', NEW.CODIGO), NULL, 'UPDATE', 'Modificado',
+            CONCAT('Función ', NEW.CODIGO, ' del usuario ', NEW.IDUSUARIO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_funcion_ad AFTER DELETE ON USUARIO_FUNCION FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIO', OLD.IDUSUARIO, 'CODIGO', OLD.CODIGO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_FUNCION', CONCAT(OLD.IDUSUARIO, '|', OLD.CODIGO), NULL, 'DELETE', 'Eliminado',
+        CONCAT('Función ', OLD.CODIGO, ' del usuario ', OLD.IDUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_tipousuario_ai AFTER INSERT ON TIPOUSUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO, 'DESCRIPCION', NEW.DESCRIPCION);
+    CALL usp_auditoria_movimiento('TIPOUSUARIO', NEW.IDTIPOUSUARIO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Tipo de usuario ', NEW.DESCRIPCION),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_tipousuario_au AFTER UPDATE ON TIPOUSUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO, 'DESCRIPCION', OLD.DESCRIPCION);
+    SET v_despues = JSON_OBJECT(
+            'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO, 'DESCRIPCION', NEW.DESCRIPCION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('TIPOUSUARIO', NEW.IDTIPOUSUARIO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Tipo de usuario ', NEW.DESCRIPCION),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_tipousuario_ad AFTER DELETE ON TIPOUSUARIO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO, 'DESCRIPCION', OLD.DESCRIPCION);
+    CALL usp_auditoria_movimiento('TIPOUSUARIO', OLD.IDTIPOUSUARIO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Tipo de usuario ', OLD.DESCRIPCION),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_modulo_ai AFTER INSERT ON MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDMODULO', NEW.IDMODULO, 'NOMBRE', NEW.NOMBRE, 'DESCRIPCION', NEW.DESCRIPCION,
+            'ICONO', NEW.ICONO, 'ORDEN', NEW.ORDEN, 'ACTIVO', NEW.ACTIVO,
+            'FECHACREACION', NEW.FECHACREACION);
+    CALL usp_auditoria_movimiento('MODULO', NEW.IDMODULO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Módulo ', NEW.NOMBRE),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_modulo_au AFTER UPDATE ON MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDMODULO', OLD.IDMODULO, 'NOMBRE', OLD.NOMBRE, 'DESCRIPCION', OLD.DESCRIPCION,
+            'ICONO', OLD.ICONO, 'ORDEN', OLD.ORDEN, 'ACTIVO', OLD.ACTIVO,
+            'FECHACREACION', OLD.FECHACREACION);
+    SET v_despues = JSON_OBJECT(
+            'IDMODULO', NEW.IDMODULO, 'NOMBRE', NEW.NOMBRE, 'DESCRIPCION', NEW.DESCRIPCION,
+            'ICONO', NEW.ICONO, 'ORDEN', NEW.ORDEN, 'ACTIVO', NEW.ACTIVO,
+            'FECHACREACION', NEW.FECHACREACION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('MODULO', NEW.IDMODULO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Módulo ', NEW.NOMBRE),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_modulo_ad AFTER DELETE ON MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDMODULO', OLD.IDMODULO, 'NOMBRE', OLD.NOMBRE, 'DESCRIPCION', OLD.DESCRIPCION,
+            'ICONO', OLD.ICONO, 'ORDEN', OLD.ORDEN, 'ACTIVO', OLD.ACTIVO,
+            'FECHACREACION', OLD.FECHACREACION);
+    CALL usp_auditoria_movimiento('MODULO', OLD.IDMODULO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Módulo ', OLD.NOMBRE),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_submodulo_ai AFTER INSERT ON SUBMODULO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'NOMBRE', NEW.NOMBRE, 'DESCRIPCION', NEW.DESCRIPCION,
+            'ICONO', NEW.ICONO, 'ORDEN', NEW.ORDEN, 'ACTIVO', NEW.ACTIVO, 'IDMODULO', NEW.IDMODULO);
+    CALL usp_auditoria_movimiento('SUBMODULO', NEW.IDSUBMODULO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Submódulo ', NEW.NOMBRE, ' de ', NEW.IDMODULO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_submodulo_au AFTER UPDATE ON SUBMODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'NOMBRE', OLD.NOMBRE, 'DESCRIPCION', OLD.DESCRIPCION,
+            'ICONO', OLD.ICONO, 'ORDEN', OLD.ORDEN, 'ACTIVO', OLD.ACTIVO, 'IDMODULO', OLD.IDMODULO);
+    SET v_despues = JSON_OBJECT(
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'NOMBRE', NEW.NOMBRE, 'DESCRIPCION', NEW.DESCRIPCION,
+            'ICONO', NEW.ICONO, 'ORDEN', NEW.ORDEN, 'ACTIVO', NEW.ACTIVO, 'IDMODULO', NEW.IDMODULO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('SUBMODULO', NEW.IDSUBMODULO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Submódulo ', NEW.NOMBRE, ' de ', NEW.IDMODULO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_submodulo_ad AFTER DELETE ON SUBMODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'NOMBRE', OLD.NOMBRE, 'DESCRIPCION', OLD.DESCRIPCION,
+            'ICONO', OLD.ICONO, 'ORDEN', OLD.ORDEN, 'ACTIVO', OLD.ACTIVO, 'IDMODULO', OLD.IDMODULO);
+    CALL usp_auditoria_movimiento('SUBMODULO', OLD.IDSUBMODULO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Submódulo ', OLD.NOMBRE, ' de ', OLD.IDMODULO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_tipo_permiso_ai AFTER INSERT ON TIPO_PERMISO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDTIPOPERMISO', NEW.IDTIPOPERMISO, 'DESCRIPCION', NEW.DESCRIPCION);
+    CALL usp_auditoria_movimiento('TIPO_PERMISO', NEW.IDTIPOPERMISO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Tipo de permiso ', NEW.DESCRIPCION),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_tipo_permiso_au AFTER UPDATE ON TIPO_PERMISO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTIPOPERMISO', OLD.IDTIPOPERMISO, 'DESCRIPCION', OLD.DESCRIPCION);
+    SET v_despues = JSON_OBJECT(
+            'IDTIPOPERMISO', NEW.IDTIPOPERMISO, 'DESCRIPCION', NEW.DESCRIPCION);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('TIPO_PERMISO', NEW.IDTIPOPERMISO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Tipo de permiso ', NEW.DESCRIPCION),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_tipo_permiso_ad AFTER DELETE ON TIPO_PERMISO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDTIPOPERMISO', OLD.IDTIPOPERMISO, 'DESCRIPCION', OLD.DESCRIPCION);
+    CALL usp_auditoria_movimiento('TIPO_PERMISO', OLD.IDTIPOPERMISO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Tipo de permiso ', OLD.DESCRIPCION),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_grupo_modulo_ai AFTER INSERT ON GRUPO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDGRUPOMODULO', NEW.IDGRUPOMODULO, 'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'IDTIPOPERMISO', NEW.IDTIPOPERMISO);
+    CALL usp_auditoria_movimiento('GRUPO_MODULO', NEW.IDGRUPOMODULO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Módulo ', NEW.IDMODULO, ' para el tipo ', NEW.IDTIPOUSUARIO, ' (permiso ', NEW.IDTIPOPERMISO, ')'),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_grupo_modulo_au AFTER UPDATE ON GRUPO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDGRUPOMODULO', OLD.IDGRUPOMODULO, 'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'IDTIPOPERMISO', OLD.IDTIPOPERMISO);
+    SET v_despues = JSON_OBJECT(
+            'IDGRUPOMODULO', NEW.IDGRUPOMODULO, 'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'IDTIPOPERMISO', NEW.IDTIPOPERMISO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('GRUPO_MODULO', NEW.IDGRUPOMODULO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Módulo ', NEW.IDMODULO, ' para el tipo ', NEW.IDTIPOUSUARIO, ' (permiso ', NEW.IDTIPOPERMISO, ')'),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_grupo_modulo_ad AFTER DELETE ON GRUPO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDGRUPOMODULO', OLD.IDGRUPOMODULO, 'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'IDTIPOPERMISO', OLD.IDTIPOPERMISO);
+    CALL usp_auditoria_movimiento('GRUPO_MODULO', OLD.IDGRUPOMODULO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Módulo ', OLD.IDMODULO, ' para el tipo ', OLD.IDTIPOUSUARIO, ' (permiso ', OLD.IDTIPOPERMISO, ')'),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_grupo_submodulo_excluido_ai AFTER INSERT ON GRUPO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDGRUPOEXCLSUB', NEW.IDGRUPOEXCLSUB, 'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('GRUPO_SUBMODULO_EXCLUIDO', NEW.IDGRUPOEXCLSUB, NULL, 'INSERT', 'Registrado',
+        CONCAT('Submódulo ', NEW.IDSUBMODULO, ' excluido del tipo ', NEW.IDTIPOUSUARIO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_grupo_submodulo_excluido_au AFTER UPDATE ON GRUPO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDGRUPOEXCLSUB', OLD.IDGRUPOEXCLSUB, 'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDGRUPOEXCLSUB', NEW.IDGRUPOEXCLSUB, 'IDTIPOUSUARIO', NEW.IDTIPOUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('GRUPO_SUBMODULO_EXCLUIDO', NEW.IDGRUPOEXCLSUB, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Submódulo ', NEW.IDSUBMODULO, ' excluido del tipo ', NEW.IDTIPOUSUARIO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_grupo_submodulo_excluido_ad AFTER DELETE ON GRUPO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDGRUPOEXCLSUB', OLD.IDGRUPOEXCLSUB, 'IDTIPOUSUARIO', OLD.IDTIPOUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('GRUPO_SUBMODULO_EXCLUIDO', OLD.IDGRUPOEXCLSUB, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Submódulo ', OLD.IDSUBMODULO, ' excluido del tipo ', OLD.IDTIPOUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_ai AFTER INSERT ON USUARIO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOMODULO', NEW.IDUSUARIOMODULO, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'IDTIPOPERMISO', NEW.IDTIPOPERMISO);
+    CALL usp_auditoria_movimiento('USUARIO_MODULO', NEW.IDUSUARIOMODULO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Módulo ', NEW.IDMODULO, ' para ', NEW.IDUSUARIO, ' (permiso ', NEW.IDTIPOPERMISO, ')'),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_au AFTER UPDATE ON USUARIO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOMODULO', OLD.IDUSUARIOMODULO, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'IDTIPOPERMISO', OLD.IDTIPOPERMISO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOMODULO', NEW.IDUSUARIOMODULO, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'IDTIPOPERMISO', NEW.IDTIPOPERMISO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO_MODULO', NEW.IDUSUARIOMODULO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Módulo ', NEW.IDMODULO, ' para ', NEW.IDUSUARIO, ' (permiso ', NEW.IDTIPOPERMISO, ')'),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_ad AFTER DELETE ON USUARIO_MODULO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOMODULO', OLD.IDUSUARIOMODULO, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'IDTIPOPERMISO', OLD.IDTIPOPERMISO);
+    CALL usp_auditoria_movimiento('USUARIO_MODULO', OLD.IDUSUARIOMODULO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Módulo ', OLD.IDMODULO, ' para ', OLD.IDUSUARIO, ' (permiso ', OLD.IDTIPOPERMISO, ')'),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_excluido_ai AFTER INSERT ON USUARIO_MODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOEXCLUIDO', NEW.IDUSUARIOEXCLUIDO, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_MODULO_EXCLUIDO', NEW.IDUSUARIOEXCLUIDO, NULL, 'INSERT', 'Registrado',
+        CONCAT('Módulo ', NEW.IDMODULO, ' excluido para ', NEW.IDUSUARIO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_excluido_au AFTER UPDATE ON USUARIO_MODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOEXCLUIDO', OLD.IDUSUARIOEXCLUIDO, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOEXCLUIDO', NEW.IDUSUARIOEXCLUIDO, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDMODULO', NEW.IDMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO_MODULO_EXCLUIDO', NEW.IDUSUARIOEXCLUIDO, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Módulo ', NEW.IDMODULO, ' excluido para ', NEW.IDUSUARIO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_modulo_excluido_ad AFTER DELETE ON USUARIO_MODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOEXCLUIDO', OLD.IDUSUARIOEXCLUIDO, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDMODULO', OLD.IDMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_MODULO_EXCLUIDO', OLD.IDUSUARIOEXCLUIDO, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Módulo ', OLD.IDMODULO, ' excluido para ', OLD.IDUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_excluido_ai AFTER INSERT ON USUARIO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOEXCLSUB', NEW.IDUSUARIOEXCLSUB, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_EXCLUIDO', NEW.IDUSUARIOEXCLSUB, NULL, 'INSERT', 'Registrado',
+        CONCAT('Submódulo ', NEW.IDSUBMODULO, ' excluido para ', NEW.IDUSUARIO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_excluido_au AFTER UPDATE ON USUARIO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOEXCLSUB', OLD.IDUSUARIOEXCLSUB, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOEXCLSUB', NEW.IDUSUARIOEXCLSUB, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_EXCLUIDO', NEW.IDUSUARIOEXCLSUB, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Submódulo ', NEW.IDSUBMODULO, ' excluido para ', NEW.IDUSUARIO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_excluido_ad AFTER DELETE ON USUARIO_SUBMODULO_EXCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOEXCLSUB', OLD.IDUSUARIOEXCLSUB, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_EXCLUIDO', OLD.IDUSUARIOEXCLSUB, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Submódulo ', OLD.IDSUBMODULO, ' excluido para ', OLD.IDUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_incluido_ai AFTER INSERT ON USUARIO_SUBMODULO_INCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_despues JSON;
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOINCLSUB', NEW.IDUSUARIOINCLSUB, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_INCLUIDO', NEW.IDUSUARIOINCLSUB, NULL, 'INSERT', 'Registrado',
+        CONCAT('Submódulo ', NEW.IDSUBMODULO, ' habilitado para ', NEW.IDUSUARIO),
+        NULL, v_despues, NULL);
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_incluido_au AFTER UPDATE ON USUARIO_SUBMODULO_INCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    DECLARE v_despues JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOINCLSUB', OLD.IDUSUARIOINCLSUB, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    SET v_despues = JSON_OBJECT(
+            'IDUSUARIOINCLSUB', NEW.IDUSUARIOINCLSUB, 'IDUSUARIO', NEW.IDUSUARIO,
+            'IDSUBMODULO', NEW.IDSUBMODULO, 'FECHAREGISTRO', NEW.FECHAREGISTRO);
+    IF NOT (v_antes <=> v_despues) THEN
+        CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_INCLUIDO', NEW.IDUSUARIOINCLSUB, NULL, 'UPDATE', 'Modificado',
+            CONCAT('Submódulo ', NEW.IDSUBMODULO, ' habilitado para ', NEW.IDUSUARIO),
+            v_antes, v_despues, NULL);
+    END IF;
+END$$
+
+CREATE TRIGGER trg_usuario_submodulo_incluido_ad AFTER DELETE ON USUARIO_SUBMODULO_INCLUIDO FOR EACH ROW
+BEGIN
+    DECLARE v_antes JSON;
+    SET v_antes = JSON_OBJECT(
+            'IDUSUARIOINCLSUB', OLD.IDUSUARIOINCLSUB, 'IDUSUARIO', OLD.IDUSUARIO,
+            'IDSUBMODULO', OLD.IDSUBMODULO, 'FECHAREGISTRO', OLD.FECHAREGISTRO);
+    CALL usp_auditoria_movimiento('USUARIO_SUBMODULO_INCLUIDO', OLD.IDUSUARIOINCLSUB, NULL, 'DELETE', 'Eliminado',
+        CONCAT('Submódulo ', OLD.IDSUBMODULO, ' habilitado para ', OLD.IDUSUARIO),
+        v_antes, NULL, NULL);
+END$$
+
+DELIMITER ;

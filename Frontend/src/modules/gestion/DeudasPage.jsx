@@ -4,7 +4,9 @@ import { faCommentDots, faFileExcel, faFilePdf } from "@fortawesome/free-solid-s
 import { parseJsonResponse } from "../../utils/api";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
 import { exportarTabla } from "../../utils/reporteTabla";
-import TablaGestion, { dinero } from "./TablaGestion";
+import Pagination from "../../components/mantenedor/Pagination";
+import TablaGestion from "./TablaGestion";
+import { dinero, siguienteOrden } from "./tablaGestionUtils";
 import "../../styles/mantenedor.css";
 import "./gestion.css";
 
@@ -53,7 +55,7 @@ const PESTANAS = {
     extra: [{ key: "TELAPODERADO", label: "Contacto", render: (f) => <BotonWhatsapp numero={f.TELAPODERADO} /> }],
   },
   mensualidades: {
-    etiqueta: "Mensualidades con saldo",
+    etiqueta: "Mensualidades con deuda",
     titulo: "Mensualidades vencidas y pendientes",
     columnas: [
       { key: "ALUMNA", label: "Alumna", formato: "texto" },
@@ -88,7 +90,7 @@ const PESTANAS = {
     extra: [{ key: "TELAPODERADO", label: "Contacto", render: (f) => <BotonWhatsapp numero={f.TELAPODERADO} /> }],
   },
   ventas: {
-    etiqueta: "Productos y servicios",
+    etiqueta: "Saldos pendientes de productos y servicios",
     titulo: "Saldos pendientes de productos y servicios",
     columnas: [
       { key: "NUMERO", label: "Recibo", formato: "texto" },
@@ -103,127 +105,192 @@ const PESTANAS = {
   },
 };
 
+const TOTAL_PESTANA = {
+  alumnas: "alumnas",
+  mensualidades: "mensualidadesConSaldo",
+  proximas: "proximas",
+  ventas: "ventas",
+};
+
+const SIN_DATOS = { filas: [], totales: {}, total: 0 };
+const TIPOS_VENTA = [
+  { value: "Producto físico", label: "SOLO PRODUCTOS" },
+  { value: "Servicio", label: "SOLO SERVICIOS" },
+];
+
+async function pedirDeudas(seccion, dias, buscar, ciclo, extras = {}) {
+  const params = new URLSearchParams({ seccion, dias: String(dias) });
+  if (buscar) params.set("buscar", buscar);
+  if (ciclo) params.set("idciclo", ciclo);
+  Object.entries(extras).forEach(([clave, valor]) => {
+    if (valor != null && valor !== "") params.set(clave, String(valor));
+  });
+  const res = await fetch(`/api/deudas/?${params}`);
+  const body = await parseJsonResponse(res);
+  if (!res.ok) throw new Error(body.error || "No se pudieron cargar las deudas");
+  return body.data;
+}
+
 export default function DeudasPage() {
-  const [data, setData] = useState(null);
+  const [resultado, setResultado] = useState({ clave: "", datos: SIN_DATOS });
+  const [totales, setTotales] = useState({});
   const [dias, setDias] = useState(7);
   const [pestana, setPestana] = useState("alumnas");
   const [buscar, setBuscar] = useState("");
+  const [buscarAplicado, setBuscarAplicado] = useState("");
   const [ciclo, setCiclo] = useState("");
-  const [cargando, setCargando] = useState(true);
+  const [ciclos, setCiclos] = useState([]);
+  const [tipoVenta, setTipoVenta] = useState("");
+  const [pagina, setPagina] = useState(1);
+  const [tamanio, setTamanio] = useState(10);
+  const [orden, setOrden] = useState(null);
+  const [exportando, setExportando] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    let vigente = true;
-    setCargando(true);
-    setError("");
     (async () => {
       try {
-        const res = await fetch(`/api/deudas/?dias=${dias}`);
+        const res = await fetch("/api/catalogos/");
         const body = await parseJsonResponse(res);
-        if (!res.ok) throw new Error(body.error || "No se pudieron cargar las deudas");
-        if (vigente) setData(body.data);
-      } catch (err) {
-        if (vigente) setError(err.message);
-      } finally {
-        if (vigente) setCargando(false);
+        if (res.ok) setCiclos(body.data?.ciclos || []);
+      } catch {
+        /* sin catálogo el filtro de categoría queda vacío */
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const espera = setTimeout(() => {
+      setBuscarAplicado(buscar.trim());
+      setPagina(1);
+    }, 350);
+    return () => clearTimeout(espera);
+  }, [buscar]);
+
+  useEffect(() => {
+    let vigente = true;
+    pedirDeudas("conteo", dias, buscarAplicado, ciclo)
+      .then((data) => vigente && setTotales(data || {}))
+      .catch(() => {});
     return () => {
       vigente = false;
     };
-  }, [dias]);
+  }, [dias, buscarAplicado, ciclo]);
 
-  const totales = data?.totales || {};
-  const ciclos = useMemo(() => {
-    const nombres = new Set();
-    ["alumnas", "mensualidades", "proximas", "ventas"].forEach((k) => (data?.[k] || []).forEach((f) => f.CICLO && nombres.add(f.CICLO)));
-    return [...nombres].sort();
-  }, [data]);
+  const ordenarPor = orden?.campo || "";
+  const direccion = orden?.direccion || "";
+  const tipo = pestana === "ventas" ? tipoVenta : "";
+  const claveActual = `${pestana}|${dias}|${buscarAplicado}|${ciclo}|${tipo}|${pagina}|${tamanio}|${ordenarPor}|${direccion}`;
+
+  useEffect(() => {
+    let vigente = true;
+    const clave = `${pestana}|${dias}|${buscarAplicado}|${ciclo}|${tipo}|${pagina}|${tamanio}|${ordenarPor}|${direccion}`;
+    pedirDeudas(pestana, dias, buscarAplicado, ciclo, { tipo, pagina, tamanio, ordenarPor, direccion })
+      .then((data) => {
+        if (!vigente) return;
+        setError("");
+        setResultado({ clave, datos: data || SIN_DATOS });
+      })
+      .catch((err) => {
+        if (!vigente) return;
+        setError(err.message);
+        setResultado({ clave, datos: SIN_DATOS });
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [pestana, dias, buscarAplicado, ciclo, tipo, pagina, tamanio, ordenarPor, direccion]);
+
+  const nombreCiclo = ciclos.find((c) => c.value === ciclo)?.label;
 
   const config = PESTANAS[pestana];
-  const filas = useMemo(() => {
-    const texto = buscar.trim().toUpperCase();
-    return (data?.[pestana] || []).filter((f) =>
-      (!ciclo || f.CICLO === ciclo)
-      && (!texto || String(f.ALUMNA || "").toUpperCase().includes(texto) || String(f.NUMERO || "").toUpperCase().includes(texto)));
-  }, [data, pestana, buscar, ciclo]);
+  const cargando = resultado.clave !== claveActual;
+  const datos = cargando ? SIN_DATOS : resultado.datos;
+  const filas = useMemo(() => datos.filas || [], [datos]);
 
-  const sumas = useMemo(() => {
-    const resultado = {};
-    config.columnas.forEach((col) => {
-      if (col.formato === "moneda") resultado[col.key] = filas.reduce((s, f) => s + Number(f[col.key] || 0), 0);
-    });
-    return resultado;
-  }, [filas, config]);
+  const cambiarFiltro = (setter) => (valor) => {
+    setter(valor);
+    setPagina(1);
+  };
+
+  const cambiarPestana = (clave) => {
+    setPestana(clave);
+    setOrden(null);
+    setPagina(1);
+  };
+
+  const ordenar = (campo) => {
+    setOrden((actual) => siguienteOrden(actual, campo));
+    setPagina(1);
+  };
 
   const columnasTabla = [
     ...config.columnas.map((col) => (config.render?.[col.key] ? { ...col, render: config.render[col.key] } : col)),
     ...(config.extra || []),
   ];
 
-  const exportar = (formato) => exportarTabla({
-    titulo: config.titulo,
-    metadatos: [
-      ciclo ? `Categoría: ${ciclo}` : "Todas las categorías",
-      pestana === "proximas" ? `Próximos ${dias} días` : null,
-      `Total por cobrar: ${dinero(totales.porCobrar)}`,
-    ].filter(Boolean),
-    columnas: config.columnas,
-    filas,
-    totales: sumas,
-    archivo: `Deudas-${pestana}`,
-    formato,
-  });
-
-  const kpi = (clave, etiqueta, valor, detalle, tono = "") => (
-    <button type="button" className={`gestion-kpi ${tono ? `gestion-kpi--${tono}` : ""} ${pestana === clave ? "is-activo" : ""}`} onClick={() => setPestana(clave)}>
-      <p>{etiqueta}</p>
-      <strong>{data ? valor : "—"}</strong>
-      <small>{detalle}</small>
-    </button>
-  );
+  const exportar = async (formato) => {
+    setExportando(true);
+    try {
+      const completo = await pedirDeudas(pestana, dias, buscarAplicado, ciclo, { tipo, todo: 1, ordenarPor, direccion });
+      await exportarTabla({
+        titulo: config.titulo,
+        metadatos: [
+          nombreCiclo ? `Categoría: ${nombreCiclo}` : "Todas las categorías",
+          tipo ? `Tipo: ${TIPOS_VENTA.find((t) => t.value === tipo)?.label}` : null,
+          buscarAplicado ? `Búsqueda: ${buscarAplicado}` : null,
+          pestana === "proximas" ? `Próximos ${dias} días` : null,
+          `Total por cobrar: ${dinero(totales.porCobrar)}`,
+        ].filter(Boolean),
+        columnas: config.columnas,
+        filas: completo.filas || [],
+        totales: completo.totales || {},
+        archivo: `Deudas-${pestana}`,
+        formato,
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExportando(false);
+    }
+  };
 
   return (
     <div className="mantenedor-page">
-      <div className="page-header gestion-head">
-        <h1>Deudas y vencimientos</h1>
-      </div>
-
       {error && <p className="field-error">{error}</p>}
-
-      <section className="gestion-kpis">
-        {kpi("alumnas", "Total consolidado por cobrar", dinero(totales.porCobrar), `${totales.alumnas || 0} alumnas con saldo`, "peligro")}
-        {kpi("mensualidades", "Mensualidades vencidas", totales.vencidas ?? 0, `${dinero(totales.montoVencido)} vencido · ${dinero(totales.mensualidades)} en total`, "aviso")}
-        {kpi("proximas", "Próximas a vencer", totales.proximas ?? 0, `En los próximos ${dias} días`, "info")}
-        {kpi("ventas", "Saldos de productos y servicios", dinero((totales.productos || 0) + (totales.servicios || 0)), `Productos ${dinero(totales.productos)} · Servicios ${dinero(totales.servicios)}`, "ok")}
-      </section>
 
       <section className="mantenedor-card">
         <div className="gestion-tabs">
           {Object.entries(PESTANAS).map(([clave, p]) => (
-            <button key={clave} type="button" className={`gestion-tab ${pestana === clave ? "is-activo" : ""}`} onClick={() => setPestana(clave)}>
-              {p.etiqueta}<span>{(data?.[clave] || []).length}</span>
+            <button key={clave} type="button" className={`gestion-tab ${pestana === clave ? "is-activo" : ""}`} onClick={() => cambiarPestana(clave)}>
+              {p.etiqueta}<span>{totales[TOTAL_PESTANA[clave]] ?? 0}</span>
             </button>
           ))}
         </div>
         <div className="gestion-barra">
           <div className="gestion-filtros">
             <input type="search" placeholder="Buscar alumna o recibo" value={buscar} onChange={(e) => setBuscar(e.target.value)} />
-            <select value={ciclo} onChange={(e) => setCiclo(e.target.value)} aria-label="Categoría">
-              <option value="">Todas las categorías</option>
-              {ciclos.map((c) => <option key={c} value={c}>{c}</option>)}
+            <select value={ciclo} onChange={(e) => cambiarFiltro(setCiclo)(e.target.value)} aria-label="Categoría">
+              <option value="">TODAS LAS CATEGORÍAS</option>
+              {ciclos.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
+            {pestana === "ventas" && (
+              <select value={tipoVenta} onChange={(e) => cambiarFiltro(setTipoVenta)(e.target.value)} aria-label="Tipo">
+                <option value="">PRODUCTOS Y SERVICIOS</option>
+                {TIPOS_VENTA.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            )}
             {pestana === "proximas" && (
-              <select value={dias} onChange={(e) => setDias(Number(e.target.value))} aria-label="Días">
+              <select value={dias} onChange={(e) => cambiarFiltro(setDias)(Number(e.target.value))} aria-label="Días">
                 {[3, 7, 15, 30].map((d) => <option key={d} value={d}>Próximos {d} días</option>)}
               </select>
             )}
           </div>
           <div className="toolbar-reporte-grupo">
-            <button type="button" className="btn-primary toolbar-reporte" disabled={!filas.length} onClick={() => exportar("excel")}>
+            <button type="button" className="btn-primary toolbar-reporte" disabled={!datos.total || exportando} onClick={() => exportar("excel")}>
               <FontAwesomeIcon icon={faFileExcel} /> Excel
             </button>
-            <button type="button" className="btn-secondary toolbar-reporte" disabled={!filas.length} onClick={() => exportar("pdf")}>
+            <button type="button" className="btn-secondary toolbar-reporte" disabled={!datos.total || exportando} onClick={() => exportar("pdf")}>
               <FontAwesomeIcon icon={faFilePdf} /> PDF
             </button>
           </div>
@@ -234,14 +301,30 @@ export default function DeudasPage() {
           </p>
         )}
         <TablaGestion
+          paginada
+          orden={orden}
+          onOrdenar={ordenar}
           columnas={columnasTabla}
           filas={filas}
-          totales={sumas}
+          totales={datos.totales}
           cargando={cargando}
           vacio="No hay saldos pendientes con estos filtros."
           claveFila={(f, i) => `${f.IDMENSUALIDAD || f.IDVENTA || f.IDALUMNA || f.ALUMNA}-${i}`}
           onFila={(f) => f.IDALUMNA && abrirEstadoCuenta(f.IDALUMNA)}
         />
+        {datos.total > 0 && (
+          <Pagination
+            pagina={pagina}
+            tamanio={tamanio}
+            total={datos.total}
+            onChange={setPagina}
+            tamanios={[10, 20, 30, 50]}
+            onTamanioChange={(valor) => {
+              setTamanio(valor);
+              setPagina(1);
+            }}
+          />
+        )}
       </section>
     </div>
   );

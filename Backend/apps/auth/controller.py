@@ -1,11 +1,21 @@
 import json
+import logging
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.auth.service import validar_usuario
+from apps.auth.service import registrar_acceso, validar_usuario
 from apps.menu_service import get_menu_for_user
 from apps.permisos import funciones_usuario
+
+logger = logging.getLogger(__name__)
+
+
+def _auditar_acceso(username, accion, detalle, exitoso):
+    try:
+        registrar_acceso(username, accion, detalle, exitoso)
+    except Exception:
+        logger.exception('No se pudo registrar el acceso de %s en AUDITORIA', username)
 
 
 @csrf_exempt
@@ -24,6 +34,10 @@ def login(request):
         valido, rol, tipo = validar_usuario(username, password)
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
+    if valido:
+        _auditar_acceso(username, 'Inicio de sesión', 'Ingreso al sistema', True)
+    else:
+        _auditar_acceso(username, 'Acceso denegado', 'Usuario o contraseña incorrectos, o usuario inactivo', False)
     return JsonResponse({
         'valid': valido,
         'role': rol,
@@ -31,6 +45,16 @@ def login(request):
         'idtipousuario': tipo,
         'funciones': funciones_usuario(username) if valido else [],
     })
+
+
+@csrf_exempt
+def logout(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    usuario = (request.headers.get('X-IdUsuario') or '').strip()
+    if usuario:
+        _auditar_acceso(usuario, 'Cierre de sesión', 'Salida del sistema', True)
+    return JsonResponse({'ok': True})
 
 
 def menu_usuario(request):

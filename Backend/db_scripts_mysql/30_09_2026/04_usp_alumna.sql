@@ -5,8 +5,36 @@ DROP PROCEDURE IF EXISTS usp_alumna_obtener;
 DROP PROCEDURE IF EXISTS usp_alumna_insertar;
 DROP PROCEDURE IF EXISTS usp_alumna_actualizar;
 DROP PROCEDURE IF EXISTS usp_alumna_eliminar;
+DROP PROCEDURE IF EXISTS usp_alumna_combo;
 
 DELIMITER $$
+
+-- Opciones de los buscadores de alumna en formularios.
+-- Con p_IdAlumna devuelve solo esa alumna (para mostrar el valor ya elegido al editar).
+-- El nombre se devuelve en mayúsculas para que todos los buscadores lo muestren igual.
+CREATE PROCEDURE usp_alumna_combo(IN p_Texto VARCHAR(100), IN p_IdAlumna VARCHAR(50), IN p_Limite INT)
+BEGIN
+    DECLARE v_t VARCHAR(100);
+    DECLARE v_limite INT;
+    SET v_t = TRIM(IFNULL(p_Texto, ''));
+    SET v_limite = IF(p_Limite IS NULL OR p_Limite < 1 OR p_Limite > 50, 20, p_Limite);
+    IF IFNULL(p_IdAlumna, '') <> '' THEN
+        SELECT IDALUMNA, UPPER(NOMBRE) AS NOMBRE, IFNULL(DNI, '') AS DNI, IFNULL(EMAIL, '') AS EMAIL, IFNULL(TELEFONO, '') AS TELEFONO
+        FROM ALUMNA
+        WHERE IDALUMNA = p_IdAlumna;
+    ELSE
+        SELECT IDALUMNA, UPPER(NOMBRE) AS NOMBRE, IFNULL(DNI, '') AS DNI, IFNULL(EMAIL, '') AS EMAIL, IFNULL(TELEFONO, '') AS TELEFONO
+        FROM ALUMNA
+        WHERE ESTADO <> 'Retirada'
+          AND (v_t = ''
+               OR NOMBRE LIKE CONCAT('%', v_t, '%')
+               OR IFNULL(DNI, '') LIKE CONCAT(v_t, '%')
+               OR IFNULL(EMAIL, '') LIKE CONCAT('%', v_t, '%')
+               OR IFNULL(TELEFONO, '') LIKE CONCAT('%', v_t, '%'))
+        ORDER BY NOMBRE
+        LIMIT v_limite;
+    END IF;
+END$$
 
 -- El rango de fechas se aplica a la inscripción; en el listado de retiradas, a la fecha de retiro.
 CREATE PROCEDURE usp_alumna_listar(

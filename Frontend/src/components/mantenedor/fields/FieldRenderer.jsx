@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faImage, faUpload } from "@fortawesome/free-solid-svg-icons";
 import CatalogoBuscador from "./CatalogoBuscador";
 import LineasVenta from "./LineasVenta";
+import MensualidadAlumnaSelect from "./MensualidadAlumnaSelect";
 import NombreBuscador from "./NombreBuscador";
 
 const MAX_FOTO_BYTES = 5 * 1024 * 1024;
@@ -88,7 +89,6 @@ export default function FieldRenderer({
       return (
         <NombreBuscador
           value={value}
-          opciones={catalogo}
           disabled={disabled}
           placeholder={campo.placeholder}
           onChange={onChange}
@@ -96,48 +96,42 @@ export default function FieldRenderer({
       );
     }
     if (campo.control === "sugerido") {
-      const lista = `sugerencias-${campo.campo}`;
       return (
-        <>
-          <input
-            type="text"
-            list={lista}
-            value={value}
-            disabled={disabled}
-            maxLength={150}
-            placeholder={campo.placeholder || "Escribe o elige de la lista"}
-            onChange={(e) => onChange(e.target.value)}
-          />
-          <datalist id={lista}>
-            {opcionesDelCampo(campo, valores, "").map((op) => (
-              <option key={op} value={op} />
-            ))}
-          </datalist>
-        </>
+        <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+          <option value="" hidden>{placeholderSelect(campo.etiqueta)}</option>
+          {opcionesDelCampo(campo, valores, value).map((op) => (
+            <option key={op} value={op}>{op}</option>
+          ))}
+        </select>
+      );
+    }
+    if (campo.control === "select" && campo.remoto === "alumnas") {
+      return (
+        <CatalogoBuscador
+          value={value}
+          disabled={disabled}
+          placeholder="Escriba el nombre de la alumna..."
+          onChange={onChange}
+        />
+      );
+    }
+    if (campo.control === "select" && campo.remoto === "mensualidades") {
+      return (
+        <MensualidadAlumnaSelect
+          idalumna={valores?.[campo.filtraPor]}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
       );
     }
     if (campo.control === "select" && campo.catalogo) {
-      const referencia = campo.filtraPor ? valores?.[campo.filtraPor] : null;
-      const opciones = campo.filtraPor
-        ? (referencia ? catalogo.filter((op) => op.idalumna === referencia) : [])
-        : catalogo;
-      if (campo.buscar) {
-        return (
-          <CatalogoBuscador
-            value={value}
-            opciones={opciones}
-            disabled={disabled}
-            placeholder="Escriba el nombre de la alumna..."
-            onChange={onChange}
-          />
-        );
-      }
       return (
-        <select value={value} disabled={disabled || (campo.filtraPor && !referencia)} onChange={(e) => onChange(e.target.value)}>
+        <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
           <option value="" hidden={Boolean(campo.ocultarPlaceholder)}>
-            {campo.filtraPor && !referencia ? "SELECCIONA UNA ALUMNA" : placeholderSelect(campo.etiqueta)}
+            {placeholderSelect(campo.etiqueta)}
           </option>
-          {opciones.map((op) => (
+          {catalogo.map((op) => (
             <option key={op.value} value={op.value}>
               {op.label}
             </option>

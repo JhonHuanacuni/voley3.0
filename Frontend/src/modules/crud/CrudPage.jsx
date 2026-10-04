@@ -16,9 +16,9 @@ import FormPage from "../../components/mantenedor/FormPage";
 import FormModal from "../../components/mantenedor/FormModal";
 import ConfirmDialog from "../../components/mantenedor/ConfirmDialog";
 import BoletaVenta from "../../components/mantenedor/BoletaVenta";
-import ControlRecibos from "../../components/mantenedor/ControlRecibos";
 import Toast from "../../components/mantenedor/feedback/Toast";
 import AbonosVentaModal from "../gestion/AbonosVentaModal";
+import DetalleAuditoriaModal from "../../components/mantenedor/DetalleAuditoriaModal";
 import "../../styles/mantenedor.css";
 
 export default function CrudPage({ config }) {
@@ -36,9 +36,9 @@ export default function CrudPage({ config }) {
   const [catalogos, setCatalogos] = useState({});
   const [confirmando, setConfirmando] = useState(false);
   const [boleta, setBoleta] = useState(null);
-  const [controlVersion, setControlVersion] = useState(0);
   const [descargando, setDescargando] = useState(false);
   const [abonosVenta, setAbonosVenta] = useState(null);
+  const [detalleAuditoria, setDetalleAuditoria] = useState(null);
   const [, setVersionFunciones] = useState(0);
 
   useEffect(() => alCambiarFunciones(() => setVersionFunciones((v) => v + 1)), []);
@@ -55,16 +55,7 @@ export default function CrudPage({ config }) {
         const res = await fetch("/api/catalogos/");
         const data = await parseJsonResponse(res);
         if (!res.ok) return;
-        const dataCatalogos = data.data || {};
-        if (Array.isArray(dataCatalogos.mensualidades)) {
-          dataCatalogos.mensualidades = dataCatalogos.mensualidades.map((item) => ({
-            ...item,
-            label: `${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · ${item.estado}${
-              item.saldo > 0 ? ` · saldo S/ ${Number(item.saldo).toFixed(2)}` : ""
-            }`,
-          }));
-        }
-        setCatalogos(dataCatalogos);
+        setCatalogos(data.data || {});
       } catch {
         /* el formulario avisa si falta un catálogo */
       }
@@ -89,6 +80,14 @@ export default function CrudPage({ config }) {
       crud.setRegistro(data);
       setModo("ver");
       setVista("form");
+    } catch (err) {
+      setToast({ mensaje: err.message, tipo: "error" });
+    }
+  };
+
+  const abrirDetalleAuditoria = async (row) => {
+    try {
+      setDetalleAuditoria(await crud.obtener(row[cfg.pk]));
     } catch (err) {
       setToast({ mensaje: err.message, tipo: "error" });
     }
@@ -119,7 +118,6 @@ export default function CrudPage({ config }) {
       ? await crud.insertar(payload)
       : await crud.actualizar(crud.registro[cfg.pk], payload);
     setToast({ mensaje, tipo: "success" });
-    setControlVersion((valor) => valor + 1);
     volverLista();
   };
 
@@ -134,7 +132,6 @@ export default function CrudPage({ config }) {
           : await crud.eliminar(confirm.id);
       setToast({ mensaje, tipo: "success" });
       setConfirm(null);
-      setControlVersion((valor) => valor + 1);
       crud.listar();
     } catch (err) {
       setToast({ mensaje: err.message, tipo: "error" });
@@ -352,7 +349,7 @@ export default function CrudPage({ config }) {
           orden={crud.orden}
           loading={crud.loading}
           onOrden={crud.toggleOrden}
-          onVer={cfg.permitirVer === false ? undefined : abrirVer}
+          onVer={cfg.detalleAuditoria ? abrirDetalleAuditoria : cfg.permitirVer === false ? undefined : abrirVer}
           onVerBoleta={cfg.boleta ? abrirBoleta : undefined}
           onAnular={cfg.controlRecibos && puede("ANULAR_OPERACIONES") ? ((row) => setConfirm({
             tipo: "anular",
@@ -383,7 +380,6 @@ export default function CrudPage({ config }) {
           tamanios={cfg.tamanios}
           onTamanioChange={crud.setTamanio}
         />
-        {cfg.controlRecibos && <ControlRecibos version={controlVersion} />}
       </div>
       <ConfirmDialog
         abierto={Boolean(confirm)}
@@ -411,11 +407,11 @@ export default function CrudPage({ config }) {
         <AbonosVentaModal
           idVenta={abonosVenta}
           onClose={() => setAbonosVenta(null)}
-          onCambio={() => {
-            crud.listar();
-            setControlVersion((valor) => valor + 1);
-          }}
+          onCambio={() => crud.listar()}
         />
+      )}
+      {detalleAuditoria && (
+        <DetalleAuditoriaModal registro={detalleAuditoria} onClose={() => setDetalleAuditoria(null)} />
       )}
       {boleta && <BoletaVenta venta={boleta} onClose={() => setBoleta(null)} />}
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}

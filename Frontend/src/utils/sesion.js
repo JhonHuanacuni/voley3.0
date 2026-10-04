@@ -31,7 +31,7 @@ export function limpiarFunciones() {
   localStorage.removeItem(CLAVE_FUNCIONES);
 }
 
-/** Toda llamada a /api lleva el usuario de la sesión para validar permisos y registrar la trazabilidad. */
+/** Toda llamada a /api lleva el usuario y el módulo abierto para validar permisos y registrar la auditoría. */
 export function instalarUsuarioEnPeticiones() {
   if (window.__usuarioEnPeticiones) return;
   window.__usuarioEnPeticiones = true;
@@ -42,6 +42,8 @@ export function instalarUsuarioEnPeticiones() {
     if (!usuario || !url.startsWith("/api/")) return original(entrada, opciones);
     const headers = new Headers(opciones.headers || (typeof entrada === "string" ? undefined : entrada.headers));
     if (!headers.has("X-IdUsuario")) headers.set("X-IdUsuario", usuario);
+    const modulo = localStorage.getItem("activePage");
+    if (modulo && !headers.has("X-Modulo")) headers.set("X-Modulo", modulo);
     return original(entrada, { ...opciones, headers });
   };
 }
