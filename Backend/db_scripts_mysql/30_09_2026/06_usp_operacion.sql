@@ -1,5 +1,6 @@
 USE `VoleyDB`;
 
+DROP FUNCTION IF EXISTS fn_asiste_dia;
 DROP PROCEDURE IF EXISTS usp_asistencia_dia;
 DROP PROCEDURE IF EXISTS usp_asistencia_marcar;
 DROP PROCEDURE IF EXISTS usp_dashboard_resumen;
@@ -24,20 +25,47 @@ DROP PROCEDURE IF EXISTS usp_auditoria_insertar;
 
 DELIMITER $$
 
--- p_Buscar filtra por nombre solo desde 3 letras.
-CREATE PROCEDURE usp_asistencia_dia(IN p_Fecha CHAR(8), IN p_IdTurno VARCHAR(50), IN p_Buscar VARCHAR(100))
+-- 1 si p_Dias ("LUNES, MIÉRCOLES, ...") incluye el día de la semana de p_Fecha. Sin días: 1.
+-- La collation de la base ignora tildes y mayúsculas.
+CREATE FUNCTION fn_asiste_dia(p_Dias VARCHAR(120), p_Fecha CHAR(8)) RETURNS TINYINT
+DETERMINISTIC
+BEGIN
+    IF TRIM(IFNULL(p_Dias, '')) = '' THEN
+        RETURN 1;
+    END IF;
+    RETURN CONCAT(',', REPLACE(p_Dias, ' ', ''), ',')
+           LIKE CONCAT('%,', ELT(WEEKDAY(STR_TO_DATE(p_Fecha, '%d%m%Y')) + 1,
+                                 'LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO'), ',%');
+END$$
+
+-- Los días de la alumna son los suyos o, si no tiene, los de su turno (LETOCA).
+-- Sin búsqueda: alumnas del turno a las que les toca ese día (todas con p_Todas = 1) y las ya marcadas;
+-- las recuperaciones marcadas salen en cualquier turno.
+-- Con búsqueda (desde 3 letras): cualquier alumna activa de cualquier turno, para registrar recuperaciones.
+CREATE PROCEDURE usp_asistencia_dia(
+    IN p_Fecha CHAR(8), IN p_IdTurno VARCHAR(50), IN p_Buscar VARCHAR(100), IN p_Todas TINYINT
+)
 BEGIN
     DECLARE v_buscar VARCHAR(100);
     SET v_buscar = TRIM(IFNULL(p_Buscar, ''));
-    SELECT a.IDALUMNA, a.NOMBRE, IFNULL(s.ESTADO, '') AS ESTADO, s.IDASISTENCIA,
-           t.NOMBRE AS TURNO
-    FROM ALUMNA a
-    LEFT JOIN TURNO t ON t.IDTURNO = a.IDTURNO
-    LEFT JOIN ASISTENCIA s ON s.IDALUMNA = a.IDALUMNA AND s.FECHA = p_Fecha
-    WHERE a.ESTADO = 'Activa'
-      AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)
-      AND (CHAR_LENGTH(v_buscar) < 3 OR a.NOMBRE LIKE CONCAT('%', v_buscar, '%'))
-    ORDER BY a.NOMBRE;
+    SELECT x.IDALUMNA, x.NOMBRE, x.ESTADO, x.IDASISTENCIA, x.TURNO, x.DIAS, x.LETOCA
+    FROM (
+        SELECT a.IDALUMNA, a.NOMBRE, IFNULL(s.ESTADO, '') AS ESTADO, s.IDASISTENCIA,
+               a.IDTURNO, t.NOMBRE AS TURNO,
+               IFNULL(NULLIF(a.DIASASISTENCIA, ''), t.DIASACTIVOS) AS DIAS,
+               fn_asiste_dia(IFNULL(NULLIF(a.DIASASISTENCIA, ''), t.DIASACTIVOS), p_Fecha) AS LETOCA
+        FROM ALUMNA a
+        LEFT JOIN TURNO t ON t.IDTURNO = a.IDTURNO
+        LEFT JOIN ASISTENCIA s ON s.IDALUMNA = a.IDALUMNA AND s.FECHA = p_Fecha
+        WHERE a.ESTADO = 'Activa'
+    ) x
+    WHERE IF(CHAR_LENGTH(v_buscar) >= 3,
+             x.NOMBRE LIKE CONCAT('%', v_buscar, '%'),
+             ((IFNULL(p_IdTurno, '') = '' OR x.IDTURNO = p_IdTurno)
+              AND (IFNULL(p_Todas, 0) = 1 OR x.LETOCA = 1 OR x.IDASISTENCIA IS NOT NULL))
+             OR (x.IDASISTENCIA IS NOT NULL AND x.LETOCA = 0)
+          )
+    ORDER BY x.NOMBRE;
 END$$
 
 CREATE PROCEDURE usp_asistencia_marcar(

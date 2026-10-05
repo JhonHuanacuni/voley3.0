@@ -57,6 +57,11 @@
   flex: 0 0 380px;
 }
 
+.asistencia-filtros .asistencia-alcance {
+  width: 190px;
+  flex: 0 0 190px;
+}
+
 .asistencia-filtros .asistencia-turno select {
   text-transform: uppercase;
 }
@@ -91,6 +96,17 @@
 .asistencia-nombre {
   font-weight: 600;
   text-transform: uppercase;
+}
+
+.asistencia-recupera {
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+.asistencia-dias {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--color-muted);
 }
 
 .asistencia-acciones {

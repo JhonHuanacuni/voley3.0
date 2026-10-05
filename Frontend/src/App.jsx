@@ -17,6 +17,7 @@ import {
   usuarioConfig,
   ventaConfig,
 } from "./modules/crud/configs";
+import AccesosPage from "./modules/accesos/AccesosPage";
 import AsistenciaPage from "./modules/asistencia/AsistenciaPage";
 import DashboardPage from "./modules/dashboard/DashboardPage";
 import CumpleanosPage from "./modules/gestion/CumpleanosPage";
@@ -38,6 +39,7 @@ const pageContent = {
   ventas: { title: "Ventas", config: ventaConfig },
   egresos: { title: "Egresos", config: egresoConfig },
   usuarios: { title: "Usuarios", config: usuarioConfig },
+  accesos: { title: "Accesos por rol", component: AccesosPage },
   auditoria: { title: "Auditoría", config: auditoriaConfig },
   promociones: { title: "Promociones", config: promocionConfig },
   cumpleanos: { title: "Cumpleaños", component: CumpleanosPage },
@@ -55,8 +57,19 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [estadoCuenta, setEstadoCuenta] = useState(null);
+  const [inicioCrud, setInicioCrud] = useState(null);
 
   useEffect(() => alPedirEstadoCuenta(setEstadoCuenta), []);
+
+  const cambiarPagina = useCallback((pagina) => {
+    setInicioCrud(null);
+    setActivePage(pagina);
+  }, []);
+
+  const irANuevo = useCallback((pagina, valores) => {
+    setInicioCrud({ pagina, valores });
+    setActivePage(pagina);
+  }, []);
 
   const page = pageContent[activePage] || pageContent.dashboard;
 
@@ -143,7 +156,7 @@ export default function App() {
       role={role}
       idusuario={idusuario}
       activePage={activePage}
-      onChangePage={setActivePage}
+      onChangePage={cambiarPagina}
       onMenuLoaded={handleMenuLoaded}
       isSidebarOpen={isSidebarOpen}
       onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
@@ -151,9 +164,23 @@ export default function App() {
       onLogout={handleLogout}
     >
       {Vista
-        ? <Vista role={role} idusuario={idusuario} onChangePage={setActivePage} />
-        : <CrudPage key={activePage} config={page.config} />}
-      {estadoCuenta && <EstadoCuentaModal key={estadoCuenta} idAlumna={estadoCuenta} onClose={() => setEstadoCuenta(null)} />}
+        ? <Vista role={role} idusuario={idusuario} onChangePage={cambiarPagina} />
+        : (
+          <CrudPage
+            key={activePage}
+            config={page.config}
+            inicio={inicioCrud?.pagina === activePage ? inicioCrud.valores : null}
+            onIrANuevo={irANuevo}
+          />
+        )}
+      {estadoCuenta && (
+        <EstadoCuentaModal
+          key={`${estadoCuenta.idAlumna}|${estadoCuenta.pestana || ""}`}
+          idAlumna={estadoCuenta.idAlumna}
+          pestanaInicial={estadoCuenta.pestana}
+          onClose={() => setEstadoCuenta(null)}
+        />
+      )}
     </Layout>
   );
 }

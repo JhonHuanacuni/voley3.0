@@ -7,6 +7,8 @@ import { exportarTabla } from "../../utils/reporteTabla";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
 import Pagination from "../../components/mantenedor/Pagination";
 import TablaGestion from "./TablaGestion";
+import ReporteDetalle from "./ReporteDetalle";
+import { PESTANAS_DETALLE } from "./reportesDetalle";
 import { siguienteOrden } from "./tablaGestionUtils";
 import "../../styles/mantenedor.css";
 import "./gestion.css";
@@ -27,7 +29,42 @@ const TIPOS = [
   { value: "cumpleanos", label: "Cumpleaños", fechas: false },
 ];
 
+const PESTANAS = [
+  { value: "generales", label: "Reportes generales" },
+  ...Object.entries(PESTANAS_DETALLE).map(([value, p]) => ({ value, label: p.etiqueta })),
+];
+
 export default function ReportesPage() {
+  const [pestana, setPestana] = useState("generales");
+
+  return (
+    <div className="mantenedor-page">
+      <div className="page-header gestion-head">
+        <h1>Reportes administrativos</h1>
+      </div>
+
+      <section className="mantenedor-card">
+        <div className="gestion-tabs" role="tablist">
+          {PESTANAS.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              role="tab"
+              aria-selected={pestana === p.value}
+              className={`gestion-tab ${pestana === p.value ? "is-activo" : ""}`}
+              onClick={() => setPestana(p.value)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {pestana === "generales" ? <ReportesGenerales /> : <ReporteDetalle key={pestana} tipo={pestana} />}
+      </section>
+    </div>
+  );
+}
+
+function ReportesGenerales() {
   const [tipo, setTipo] = useState("matriculas");
   const [desde, setDesde] = useState(primerDiaMesInput());
   const [hasta, setHasta] = useState(hoyInput());
@@ -165,83 +202,77 @@ export default function ReportesPage() {
   ));
 
   return (
-    <div className="mantenedor-page">
-      <div className="page-header gestion-head">
-        <h1>Reportes administrativos</h1>
+    <>
+      <div className="gestion-barra">
+        <div className="gestion-filtros">
+          <label>
+            Reporte
+            <select value={tipo} onChange={(e) => cambiarTipo(e.target.value)}>
+              {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </label>
+          {definicion?.fechas && (
+            <>
+              <label>
+                Desde
+                <input type="date" value={desde} max={hasta || undefined} onChange={(e) => cambiarFiltro(setDesde)(e.target.value)} />
+              </label>
+              <label>
+                Hasta
+                <input type="date" value={hasta} min={desde || undefined} onChange={(e) => cambiarFiltro(setHasta)(e.target.value)} />
+              </label>
+            </>
+          )}
+          <label>
+            Categoría
+            <select value={idCiclo} onChange={(e) => cambiarFiltro(setIdCiclo)(e.target.value)}>
+              <option value="">TODAS LAS CATEGORÍAS</option>
+              {ciclos.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="toolbar-reporte-grupo">
+          <button type="button" className="btn-primary toolbar-reporte" disabled={!reporte?.total || exportando} onClick={() => exportar("excel")}>
+            <FontAwesomeIcon icon={faFileExcel} /> Excel
+          </button>
+          <button type="button" className="btn-secondary toolbar-reporte" disabled={!reporte?.total || exportando} onClick={() => exportar("pdf")}>
+            <FontAwesomeIcon icon={faFilePdf} /> PDF
+          </button>
+        </div>
       </div>
 
-      <section className="mantenedor-card">
-        <div className="gestion-barra">
-          <div className="gestion-filtros">
-            <label>
-              Reporte
-              <select value={tipo} onChange={(e) => cambiarTipo(e.target.value)}>
-                {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </label>
-            {definicion?.fechas && (
-              <>
-                <label>
-                  Desde
-                  <input type="date" value={desde} max={hasta || undefined} onChange={(e) => cambiarFiltro(setDesde)(e.target.value)} />
-                </label>
-                <label>
-                  Hasta
-                  <input type="date" value={hasta} min={desde || undefined} onChange={(e) => cambiarFiltro(setHasta)(e.target.value)} />
-                </label>
-              </>
-            )}
-            <label>
-              Categoría
-              <select value={idCiclo} onChange={(e) => cambiarFiltro(setIdCiclo)(e.target.value)}>
-                <option value="">TODAS LAS CATEGORÍAS</option>
-                {ciclos.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </label>
-          </div>
-          <div className="toolbar-reporte-grupo">
-            <button type="button" className="btn-primary toolbar-reporte" disabled={!reporte?.total || exportando} onClick={() => exportar("excel")}>
-              <FontAwesomeIcon icon={faFileExcel} /> Excel
-            </button>
-            <button type="button" className="btn-secondary toolbar-reporte" disabled={!reporte?.total || exportando} onClick={() => exportar("pdf")}>
-              <FontAwesomeIcon icon={faFilePdf} /> PDF
-            </button>
-          </div>
-        </div>
+      {error && <p className="field-error">{error}</p>}
+      {reporte && (
+        <p className="gestion-nota">
+          <strong>{reporte.titulo}</strong> · {reporte.total} registros · {metadatos().join(" · ")}
+          {tipo === "ventas" && " · Los totales solo consideran recibos emitidos."}
+        </p>
+      )}
 
-        {error && <p className="field-error">{error}</p>}
-        {reporte && (
-          <p className="gestion-nota">
-            <strong>{reporte.titulo}</strong> · {reporte.total} registros · {metadatos().join(" · ")}
-            {tipo === "ventas" && " · Los totales solo consideran recibos emitidos."}
-          </p>
-        )}
-
-        <TablaGestion
-          paginada
-          orden={orden}
-          onOrdenar={ordenar}
-          columnas={columnas}
-          filas={reporte?.filas || []}
-          totales={reporte?.totales}
-          cargando={cargando}
-          vacio="No hay registros para los filtros elegidos."
-          onFila={reporte?.filas?.some((f) => f.IDALUMNA) ? (f) => f.IDALUMNA && abrirEstadoCuenta(f.IDALUMNA) : undefined}
+      <TablaGestion
+        paginada
+        orden={orden}
+        onOrdenar={ordenar}
+        columnas={columnas}
+        filas={reporte?.filas || []}
+        totales={reporte?.totales}
+        cargando={cargando}
+        vacio="No hay registros para los filtros elegidos."
+        onFila={reporte?.filas?.some((f) => f.IDALUMNA) ? (f) => f.IDALUMNA && abrirEstadoCuenta(f.IDALUMNA) : undefined}
+      />
+      {reporte?.total > 0 && (
+        <Pagination
+          pagina={pagina}
+          tamanio={tamanio}
+          total={reporte.total}
+          onChange={setPagina}
+          tamanios={[10, 20, 30, 50]}
+          onTamanioChange={(valor) => {
+            setTamanio(valor);
+            setPagina(1);
+          }}
         />
-        {reporte?.total > 0 && (
-          <Pagination
-            pagina={pagina}
-            tamanio={tamanio}
-            total={reporte.total}
-            onChange={setPagina}
-            tamanios={[10, 20, 30, 50]}
-            onTamanioChange={(valor) => {
-              setTamanio(valor);
-              setPagina(1);
-            }}
-          />
-        )}
-      </section>
-    </div>
+      )}
+    </>
   );
 }

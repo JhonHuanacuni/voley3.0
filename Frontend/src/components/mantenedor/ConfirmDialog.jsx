@@ -6,6 +6,8 @@ export default function ConfirmDialog({
   onConfirm,
   confirmando,
   confirmLabel = "Eliminar",
+  cancelLabel = "Cancelar",
+  variante = "danger",
 }) {
   if (!abierto) return null;
 
@@ -20,9 +22,9 @@ export default function ConfirmDialog({
         </div>
         <div className="modal-footer">
           <button type="button" className="btn-secondary" onClick={onCancel} disabled={confirmando}>
-            Cancelar
+            {cancelLabel}
           </button>
-          <button type="button" className="btn-danger" onClick={onConfirm} disabled={confirmando}>
+          <button type="button" className={`btn-${variante}`} onClick={onConfirm} disabled={confirmando}>
             {confirmLabel}
           </button>
         </div>

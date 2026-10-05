@@ -24,6 +24,7 @@ SUBMODULO_PAGE_MAP = {
     'SUB013': 'deudas',
     'SUB014': 'reportes',
     'SUB015': 'promociones',
+    'SUB016': 'accesos',
 }
 
 ROLE_FROM_TIPO = {

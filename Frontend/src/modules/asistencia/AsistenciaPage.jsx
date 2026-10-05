@@ -15,6 +15,7 @@ const ESTADOS = [
 const COLUMNAS = [
   { campo: "NOMBRE", etiqueta: "Alumna" },
   { campo: "TURNO", etiqueta: "Turno" },
+  { campo: "DIAS", etiqueta: "Días" },
   { campo: "ESTADO", etiqueta: "Estado" },
 ];
 
@@ -23,9 +24,18 @@ function valorOrden(fila, campo) {
   return String(fila[campo] || "");
 }
 
+function diasCortos(texto) {
+  return String(texto || "")
+    .split(",")
+    .map((dia) => dia.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().slice(0, 2).toUpperCase())
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export default function AsistenciaPage() {
   const [fecha, setFecha] = useState(hoyInput());
   const [turno, setTurno] = useState(null);
+  const [todas, setTodas] = useState(false);
   const [buscar, setBuscar] = useState("");
   const [turnos, setTurnos] = useState([]);
   const [filas, setFilas] = useState([]);
@@ -59,7 +69,7 @@ export default function AsistenciaPage() {
 
   const pedidoActual = useRef(0);
 
-  const cargar = async (fechaValor, turnoValor, buscarValor) => {
+  const cargar = async (fechaValor, turnoValor, buscarValor, todasValor) => {
     const fechaDb = inputToDb(fechaValor);
     if (!fechaDb) return;
     const pedido = ++pedidoActual.current;
@@ -68,6 +78,7 @@ export default function AsistenciaPage() {
     const params = new URLSearchParams({ fecha: fechaDb });
     if (turnoValor) params.set("idturno", turnoValor);
     if (buscarValor) params.set("buscar", buscarValor);
+    if (todasValor) params.set("todas", "1");
     try {
       const res = await fetch(`/api/asistencia/dia/?${params}`);
       const data = await parseJsonResponse(res);
@@ -85,8 +96,8 @@ export default function AsistenciaPage() {
 
   useEffect(() => {
     if (turno === null) return;
-    cargar(fecha, turno, busquedaAplicada);
-  }, [fecha, turno, busquedaAplicada]);
+    cargar(fecha, turno, busquedaAplicada, todas);
+  }, [fecha, turno, busquedaAplicada, todas]);
 
   const marcar = async (idalumna, estado) => {
     setAviso("");
@@ -132,7 +143,7 @@ export default function AsistenciaPage() {
                 type="search"
                 value={buscar}
                 onChange={(event) => setBuscar(event.target.value)}
-                placeholder="Escriba al menos 3 letras del nombre..."
+                placeholder="Nombre (busca en todos los turnos)..."
               />
             </span>
           </label>
@@ -149,6 +160,13 @@ export default function AsistenciaPage() {
               <option value="">TODOS</option>
             </select>
           </label>
+          <label className="asistencia-alcance">
+            Alumnas
+            <select value={todas ? "1" : ""} onChange={(event) => setTodas(event.target.value === "1")}>
+              <option value="">LES TOCA ESE DÍA</option>
+              <option value="1">TODAS DEL TURNO</option>
+            </select>
+          </label>
         </div>
       </section>
 
@@ -156,6 +174,11 @@ export default function AsistenciaPage() {
       {aviso && <p className="field-error">{aviso}</p>}
       {consulta.length > 0 && consulta.length < 3 && (
         <p className="asistencia-ayuda">Escribe al menos 3 letras para filtrar por nombre.</p>
+      )}
+      {busquedaAplicada && (
+        <p className="asistencia-ayuda">
+          Resultados de todos los turnos. Si marcas a una alumna en un día que no le toca, queda como recuperación.
+        </p>
       )}
 
       <div className="mantenedor-card asistencia-tabla">
@@ -174,12 +197,27 @@ export default function AsistenciaPage() {
           </thead>
           <tbody>
             {cargando && (
-              <tr><td colSpan={3}>Cargando asistencia...</td></tr>
+              <tr><td colSpan={COLUMNAS.length}>Cargando asistencia...</td></tr>
             )}
             {!cargando && visibles.map((fila) => (
               <tr key={fila.IDALUMNA}>
-                <td className="asistencia-nombre">{fila.NOMBRE}</td>
+                <td className="asistencia-nombre">
+                  {fila.NOMBRE}
+                  {Number(fila.LETOCA) === 0 && (fila.ESTADO ? (
+                    <span className="badge-estado parcial asistencia-recupera" title="Marcada en un día que no es de su clase">
+                      Recuperación
+                    </span>
+                  ) : (
+                    <span
+                      className="badge-estado inactivo asistencia-recupera"
+                      title="Si la marcas, contará como recuperación"
+                    >
+                      {fecha === hoyInput() ? "No le toca hoy" : "No le toca este día"}
+                    </span>
+                  ))}
+                </td>
                 <td>{fila.TURNO || "—"}</td>
+                <td className="asistencia-dias">{diasCortos(fila.DIAS) || "—"}</td>
                 <td>
                   <div className="asistencia-acciones">
                     {ESTADOS.map((estado) => (
@@ -197,7 +235,13 @@ export default function AsistenciaPage() {
               </tr>
             ))}
             {!cargando && !visibles.length && (
-              <tr><td colSpan={3}>No hay alumnas para este filtro.</td></tr>
+              <tr>
+                <td colSpan={COLUMNAS.length}>
+                  {busquedaAplicada || todas
+                    ? "No hay alumnas para este filtro."
+                    : "Ninguna alumna de este turno tiene clase este día. Busca por nombre para registrar una recuperación o elige Todas del turno."}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

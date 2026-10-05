@@ -86,7 +86,7 @@ export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {
     });
     const data = await parseJsonResponse(res);
     if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al crear");
-    return data.mensaje;
+    return { mensaje: data.mensaje, id: data.id };
   };
 
   const actualizar = async (id, payload) => {

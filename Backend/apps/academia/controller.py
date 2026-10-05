@@ -17,6 +17,8 @@ from apps.academia.service import (
     catalogos,
     cumpleanos,
     dashboard,
+    dashboard_asistencias,
+    dashboard_finanzas,
     dashboard_matriculas,
     deudas,
     es_primera_mensualidad,
@@ -27,6 +29,7 @@ from apps.academia.service import (
     mensualidades_por_alumna,
     renovar_mensualidad,
     reporte,
+    reporte_detalle,
     trazabilidad,
 )
 from apps.permisos import FUNCIONES, funciones_usuario
@@ -123,8 +126,11 @@ def entidad(request, nombre, id_registro=None):
                 return denegado
             if nombre == 'ventas':
                 payload['IDUSUARIO_ACCION'] = _actor(request)
-            ok, mensaje = insertar(payload)
-            return JsonResponse({'ok': bool(ok), 'mensaje': mensaje}, status=200 if ok else 400)
+            ok, mensaje, *nuevo_id = insertar(payload)
+            respuesta = {'ok': bool(ok), 'mensaje': mensaje}
+            if ok and nuevo_id and nuevo_id[0]:
+                respuesta['id'] = nuevo_id[0]
+            return JsonResponse(respuesta, status=200 if ok else 400)
         if request.method == 'PUT' and id_registro and actualizar:
             payload = _body(request)
             if payload is None:
@@ -263,6 +269,34 @@ def dashboard_matriculas_view(request):
 
 
 @csrf_exempt
+def dashboard_asistencias_view(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    denegado = _exigir(request, 'VER_DASHBOARD')
+    if denegado:
+        return denegado
+    try:
+        return JsonResponse({'data': dashboard_asistencias(request.GET)})
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def dashboard_finanzas_view(request):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    denegado = _exigir(request, 'VER_DASHBOARD')
+    if denegado:
+        return denegado
+    try:
+        return JsonResponse({'data': dashboard_finanzas(request.GET)})
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
 def asistencia_dia_view(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Método no permitido'}, status=405)
@@ -271,7 +305,9 @@ def asistencia_dia_view(request):
     if len(fecha) != 8:
         return JsonResponse({'error': 'Indica la fecha.'}, status=400)
     try:
-        return JsonResponse({'data': asistencia_dia(fecha, id_turno, request.GET.get('buscar'))})
+        return JsonResponse({'data': asistencia_dia(
+            fecha, id_turno, request.GET.get('buscar'), request.GET.get('todas') == '1',
+        )})
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)
 
@@ -386,6 +422,21 @@ def reporte_view(request, tipo):
         return denegado
     try:
         return JsonResponse({'data': reporte(tipo, request.GET)})
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def reporte_detalle_view(request, tipo):
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    denegado = _exigir(request, 'VER_REPORTES')
+    if denegado:
+        return denegado
+    try:
+        return JsonResponse({'data': reporte_detalle(tipo, request.GET)})
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
     except Exception as exc:

@@ -21,18 +21,18 @@ export default function TablaGestion({
   paginada = false,
   orden,
   onOrdenar,
+  className = "",
 }) {
+  const claseCelda = (col) => [col.formato === "moneda" || col.formato === "entero" ? "gestion-num" : "", col.className || ""]
+    .filter(Boolean).join(" ") || undefined;
   return (
-    <div className={`data-table-wrap gestion-tabla ${paginada ? "gestion-tabla--paginada" : ""}`}>
+    <div className={`data-table-wrap gestion-tabla ${paginada ? "gestion-tabla--paginada" : ""} ${className}`}>
       <table className="data-table">
         <thead>
           <tr>
             {columnas.map((col) => {
               const ordenable = Boolean(onOrdenar) && esOrdenable(col);
-              const clases = [
-                col.formato === "moneda" || col.formato === "entero" ? "gestion-num" : "",
-                ordenable ? "sortable" : "",
-              ].filter(Boolean).join(" ");
+              const clases = [claseCelda(col), ordenable ? "sortable" : ""].filter(Boolean).join(" ");
               return (
                 <th
                   key={col.key}
@@ -65,7 +65,7 @@ export default function TablaGestion({
               onClick={onFila ? () => onFila(fila) : undefined}
             >
               {columnas.map((col) => (
-                <td key={col.key} className={col.formato === "moneda" || col.formato === "entero" ? "gestion-num" : ""}>
+                <td key={col.key} className={claseCelda(col)}>
                   {col.render ? col.render(fila) : textoCelda(fila, col) || "—"}
                 </td>
               ))}
@@ -76,7 +76,7 @@ export default function TablaGestion({
           <tfoot>
             <tr>
               {columnas.map((col, i) => (
-                <td key={col.key} className={col.formato === "moneda" || col.formato === "entero" ? "gestion-num" : ""}>
+                <td key={col.key} className={claseCelda(col)}>
                   {i === 0 ? "Total" : totales[col.key] != null ? valorCelda(totales[col.key], col.formato) : ""}
                 </td>
               ))}

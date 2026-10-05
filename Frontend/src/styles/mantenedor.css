@@ -228,7 +228,7 @@ button.page-breadcrumb-link:hover {
   margin: 0;
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--color-text-muted);
+  color: var(--color-muted);
   white-space: nowrap;
 }
 
@@ -334,6 +334,29 @@ button.page-breadcrumb-link:hover {
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
+}
+
+.celda-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.celda-link:hover {
+  color: #9b2148;
+  text-decoration: underline;
+}
+
+.celda-link-detalle {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #9b2148;
 }
 
 .boleta-panel {
@@ -479,6 +502,7 @@ button.page-breadcrumb-link:hover {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
+  text-transform: uppercase;
 }
 
 .badge-estado.activo {
@@ -1140,6 +1164,13 @@ button.page-breadcrumb-link:hover {
   color: var(--color-primary, #d15381);
 }
 
+.dias-semana-chip:hover {
+  border-color: var(--color-primary, #d15381);
+}
+
+.form-field.has-error .dias-semana-chip:not(.is-active) {
+  border-color: var(--color-danger);
+}
 .dias-asistencia-resumen {
   font-size: 0.78rem;
   font-weight: 600;
@@ -1473,6 +1504,7 @@ button.page-breadcrumb-link:hover {
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
+  text-transform: uppercase;
   background: #eef0f4;
   color: #4a5568;
 }

@@ -33,6 +33,7 @@ PAGINA_FUNCIONES = {
     'deudas': ['VER_SALDOS'],
     'reportes': ['VER_REPORTES'],
     'usuarios': ['GESTIONAR_USUARIOS'],
+    'accesos': ['GESTIONAR_USUARIOS'],
     'promociones': ['REGISTRAR_MENSUALIDADES', 'MODIFICAR_OPERACIONES'],
 }
 

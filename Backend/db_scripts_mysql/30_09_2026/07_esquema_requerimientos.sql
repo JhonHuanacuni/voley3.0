@@ -75,6 +75,8 @@ CALL usp_tmp_columna('MENSUALIDAD', 'IDPROMOCION', 'VARCHAR(50) NULL AFTER IDREN
 CALL usp_tmp_columna('VENTA', 'IDALUMNA', 'VARCHAR(50) NULL AFTER NOMBRE');
 CALL usp_tmp_columna('VENTA', 'ACUENTA', 'DECIMAL(10,2) NULL AFTER PRECIO');
 CALL usp_tmp_columna('AUDITORIA', 'IDALUMNA', 'VARCHAR(50) NULL AFTER IDREGISTRO');
+-- Días que asiste la alumna. NULL: todos los días de su turno.
+CALL usp_tmp_columna('ALUMNA', 'DIASASISTENCIA', 'VARCHAR(120) NULL AFTER IDTURNO');
 
 CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_REG', 'TABLA, IDREGISTRO');
 CALL usp_tmp_indice('AUDITORIA', 'IX_AUD_ALU', 'IDALUMNA');

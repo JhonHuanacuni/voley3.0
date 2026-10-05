@@ -355,7 +355,14 @@ export default function DataTable({
           {items.map((row, index) => (
             <tr key={row[pk]}>
               {columnas.map((col) => (
-                <td key={col.campo}>{renderCell(col, row, index, offset)}</td>
+                <td key={col.campo}>
+                  {col.onClick ? (
+                    <button type="button" className="celda-link" title={col.tituloClick} onClick={() => col.onClick(row)}>
+                      {renderCell(col, row, index, offset)}
+                      {col.detalle?.(row) && <span className="celda-link-detalle">{col.detalle(row)}</span>}
+                    </button>
+                  ) : renderCell(col, row, index, offset)}
+                </td>
               ))}
               {onVerBoleta && (
                 <td>

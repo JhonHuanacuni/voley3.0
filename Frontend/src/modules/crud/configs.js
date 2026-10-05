@@ -1,5 +1,7 @@
-import { primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+import { dbToInput, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
 import { OPERACIONES_AUDITORIA, TABLAS_AUDITORIA } from "../../utils/auditoria";
+import { parseJsonResponse } from "../../utils/api";
+import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
 
 const MEDIOS = ["Efectivo", "Transferencia", "Tarjeta", "Yape", "Plin", "Otro"];
 const GENEROS = ["Mujer", "Hombre"];
@@ -35,6 +37,9 @@ const FUNCIONES_POR_DEFECTO = [
   "VER_DASHBOARD",
 ];
 
+const enMayusculas = (columnas) =>
+  columnas.map((col) => (col.tipo || col.mayusculas === false ? col : { ...col, mayusculas: true }));
+
 const filtrosAlumna = [
   { key: "estado", etiqueta: "Estado", opciones: ESTADOS_ALUMNA },
   { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
@@ -66,7 +71,16 @@ const seccionesAlumna = [
       { campo: "TELEFONO", etiqueta: "Teléfono", control: "text" },
       { campo: "COLEGIO", etiqueta: "Colegio", control: "text" },
       { campo: "IDCICLO", etiqueta: "Ciclo", control: "select", catalogo: "ciclos" },
-      { campo: "IDTURNO", etiqueta: "Turno", control: "select", catalogo: "turnos" },
+      { campo: "IDTURNO", etiqueta: "Turno", control: "select", catalogo: "turnos", limpia: ["DIASASISTENCIA"] },
+      {
+        campo: "DIASASISTENCIA",
+        etiqueta: "Días que asiste",
+        control: "diasTexto",
+        catalogo: "turnos",
+        diasDe: "IDTURNO",
+        full: true,
+        ayuda: "Salen los días del turno elegido. Desmarca los que no viene; si va todos, no cambies nada. En Asistencia igual se puede marcar cualquier día (recuperaciones).",
+      },
       { campo: "CONDICION", etiqueta: "Condición", control: "select", opciones: CONDICIONES, defaultValue: "Regular" },
       { campo: "TALLA", etiqueta: "Talla", control: "select", opciones: TALLAS },
       { campo: "ESTADO", etiqueta: "Estado", control: "select", opciones: ESTADOS_ALUMNA, obligatorio: true, defaultValue: "Activa" },
@@ -100,6 +114,8 @@ const seccionesAlumna = [
 export const alumnaConfig = {
   modulo: "Academia",
   titulo: "Alumnas",
+  singular: "alumna",
+  femenino: true,
   entidad: "alumnas",
   pk: "IDALUMNA",
   usaCatalogos: true,
@@ -113,6 +129,19 @@ export const alumnaConfig = {
   traza: true,
   acciones: ["estadoCuenta"],
   funciones: { nuevo: ["REGISTRAR_ALUMNAS"] },
+  despuesDeCrear: {
+    titulo: "¿Continuar con la matrícula?",
+    mensaje: (alumna) => `${alumna.NOMBRE} quedó registrada. ¿Registrar ahora su matrícula y después el pago?`,
+    boton: "Registrar matrícula",
+    pagina: "mensualidades",
+    funciones: ["REGISTRAR_MATRICULAS", "REGISTRAR_MENSUALIDADES"],
+    valores: (id, alumna) => ({
+      IDALUMNA: id,
+      IDTURNO_ALUMNA: alumna.IDTURNO || "",
+      DIASASISTENCIA: alumna.DIASASISTENCIA || "",
+      FECHAINICIO: dbToInput(alumna.FECHAINSCRIPCION || ""),
+    }),
+  },
 };
 
 export const retiradasConfig = {
@@ -151,28 +180,46 @@ export const turnoConfig = {
   pk: "IDTURNO",
   placeholder: "Buscar turno...",
   filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Inactivo"] }],
-  columnas: [
+  columnas: enMayusculas([
     { campo: "NOMBRE", etiqueta: "Turno", ordenable: true },
     { campo: "HORARIO", etiqueta: "Horario" },
     { campo: "DIASACTIVOS", etiqueta: "Días" },
     { campo: "ACTIVO", etiqueta: "Estado", tipo: "estado" },
-  ],
+  ]),
   campos: [
     { campo: "NOMBRE", etiqueta: "Nombre", control: "text", obligatorio: true },
     { campo: "HORAINICIO", etiqueta: "Hora de inicio", control: "time", obligatorio: true },
     { campo: "HORAFIN", etiqueta: "Hora de fin", control: "time", obligatorio: true },
-    { campo: "DIASACTIVOS", etiqueta: "Días activos", control: "text", ayuda: "Ejemplo: Lunes, Miércoles, Viernes. Vacío = todos." },
+    { campo: "DIASACTIVOS", etiqueta: "Días activos", control: "diasTexto", full: true, obligatorio: true },
     { campo: "ACTIVO", etiqueta: "Estado", control: "select", opciones: ["Activo", "Inactivo"], defaultValue: "Activo" },
   ],
 };
 
 const PERIODO_ACTIVO = { campo: "PERIODO", valor: "Activo" };
 
+async function cargarDiasAlumna(idAlumna, setValues) {
+  try {
+    const res = await fetch(`/api/alumnas/${encodeURIComponent(idAlumna)}/`);
+    const data = await parseJsonResponse(res);
+    const alumna = res.ok ? data.data : null;
+    if (!alumna) return;
+    setValues((prev) => (prev.IDALUMNA !== idAlumna ? prev : {
+      ...prev,
+      IDTURNO_ALUMNA: alumna.IDTURNO || "",
+      DIASASISTENCIA: alumna.DIASASISTENCIA || "",
+    }));
+  } catch {
+    /* sin turno conocido se muestran los 7 días */
+  }
+}
+
 export const mensualidadConfig = {
   modulo: "Academia",
   titulo: "Mensualidades",
   singular: "mensualidad",
   femenino: true,
+  nuevoEtiqueta: "Nueva matrícula",
+  tituloNuevo: "Nueva matrícula",
   entidad: "mensualidades",
   pk: "IDMENSUALIDAD",
   usaCatalogos: true,
@@ -191,9 +238,17 @@ export const mensualidadConfig = {
     },
     { key: "estado", etiqueta: "Pago", opciones: ["Deuda", "Parcial", "Completada", "Inactivo"] },
     { key: "idciclo", etiqueta: "Ciclo", catalogo: "ciclos" },
+    { key: "periodos", etiqueta: "Periodos", vacio: "ÚLTIMO DE CADA ALUMNA", opciones: ["Todos los periodos"] },
   ],
   columnas: [
-    { campo: "ALUMNA", etiqueta: "Alumna", mayusculas: true },
+    {
+      campo: "ALUMNA",
+      etiqueta: "Alumna",
+      mayusculas: true,
+      onClick: (row) => abrirEstadoCuenta(row.IDALUMNA, "mensualidades"),
+      tituloClick: "Ver todas sus mensualidades",
+      detalle: (row) => (Number(row.PERIODOS) > 1 ? `Ver sus ${row.PERIODOS} periodos` : ""),
+    },
     { campo: "TIPO", etiqueta: "Concepto" },
     { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
     { campo: "FECHAINICIO", etiqueta: "Inicio", tipo: "fecha" },
@@ -204,7 +259,25 @@ export const mensualidadConfig = {
     { campo: "ESTADO", etiqueta: "Pago", tipo: "estadoPago" },
   ],
   campos: [
-    { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", remoto: "alumnas", obligatorio: true },
+    {
+      campo: "IDALUMNA",
+      etiqueta: "Alumna",
+      control: "select",
+      remoto: "alumnas",
+      obligatorio: true,
+      ayuda: "Para las mensualidades siguientes usa el botón Generar el periodo siguiente (↻) de la lista.",
+    },
+    {
+      campo: "DIASASISTENCIA",
+      etiqueta: "Días que asistirá",
+      control: "diasTexto",
+      catalogo: "turnos",
+      diasDe: "IDTURNO_ALUMNA",
+      soloCrear: true,
+      full: true,
+      visibleSi: { campo: "IDALUMNA", lleno: true },
+      ayuda: "Salen los días de su turno; desmarca los que no vendrá. Se guarda en la ficha de la alumna. En Asistencia igual se puede marcar cualquier día (recuperaciones).",
+    },
     {
       campo: "PERIODO",
       etiqueta: "Tipo de periodo",
@@ -222,7 +295,7 @@ export const mensualidadConfig = {
       control: "select",
       catalogo: "promociones",
       visibleSi: PERIODO_ACTIVO,
-      ayuda: "Opcional. Con promoción, el monto se calcula según el mes de la promoción.",
+      ayuda: "Opcional. Las promociones se crean en Administración > Promociones. Con promoción, el monto se calcula según el mes de la promoción.",
     },
     {
       campo: "MONTOREGULAR",
@@ -241,6 +314,11 @@ export const mensualidadConfig = {
     { campo: "NOTAS", etiqueta: "Notas", control: "textarea", full: true },
   ],
   onFieldChange: (campo, valor, setValues, catalogos) => {
+    if (campo === "IDALUMNA") {
+      setValues((prev) => ({ ...prev, IDTURNO_ALUMNA: "", DIASASISTENCIA: "" }));
+      if (valor) cargarDiasAlumna(valor, setValues);
+      return;
+    }
     if (campo !== "IDPROMOCION") return;
     const promo = (catalogos.promociones || []).find((p) => p.value === valor);
     setValues((prev) => ({
@@ -248,6 +326,20 @@ export const mensualidadConfig = {
       MONTOREGULAR: promo ? String(promo.regular) : prev.MONTOREGULAR,
       MONTO: "",
     }));
+  },
+  despuesDeCrear: {
+    titulo: "¿Registrar el pago?",
+    mensaje: (_, pago) => `La matrícula quedó registrada${pago.MONTO ? ` por S/ ${Number(pago.MONTO).toFixed(2)}` : ""}. ¿Registrar ahora el pago?`,
+    boton: "Registrar pago",
+    pagina: "pagos",
+    funciones: ["EMITIR_RECIBOS"],
+    aplica: (matricula) => matricula.PERIODO !== "Inactivo",
+    valores: async (id, matricula) => {
+      const res = await fetch(`/api/mensualidades/${encodeURIComponent(id)}/`);
+      const data = await parseJsonResponse(res);
+      const monto = res.ok ? data.data?.MONTO : null;
+      return { IDALUMNA: matricula.IDALUMNA, IDMENSUALIDAD: id, MONTO: monto != null ? String(monto) : "" };
+    },
   },
 };
 
@@ -307,7 +399,7 @@ export const promocionConfig = {
   funciones: { nuevo: ["MODIFICAR_OPERACIONES"] },
   placeholder: "Buscar promoción...",
   filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Inactivo"] }],
-  columnas: [
+  columnas: enMayusculas([
     { campo: "NOMBRE", etiqueta: "Promoción" },
     { campo: "TIPO", etiqueta: "Aplica a" },
     { campo: "MONTOREGULAR", etiqueta: "Regular", tipo: "decimal" },
@@ -318,7 +410,7 @@ export const promocionConfig = {
     { campo: "FECHAFIN", etiqueta: "Hasta", tipo: "fecha" },
     { campo: "USOS", etiqueta: "Usos" },
     { campo: "ACTIVO", etiqueta: "Estado", tipo: "estado" },
-  ],
+  ]),
   secciones: [
     {
       titulo: "Tarifa o promoción",
@@ -354,7 +446,7 @@ export const ventaConfig = {
   usaCatalogos: true,
   boleta: true,
   placeholder: "Buscar por N.° de recibo, nombre o producto...",
-  columnas: [
+  columnas: enMayusculas([
     { campo: "NUMERO", etiqueta: "Recibo" },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "NOMBRE", etiqueta: "Nombre", mayusculas: true },
@@ -366,7 +458,7 @@ export const ventaConfig = {
     { campo: "SALDO", etiqueta: "Saldo", tipo: "saldoDeuda" },
     { campo: "MEDIO", etiqueta: "Medio" },
     { campo: "ESTADO_RECIBO", etiqueta: "Estado", tipo: "estado" },
-  ],
+  ]),
   traza: true,
   acciones: ["abonos", "estadoCuenta"],
   funciones: { nuevo: ["REGISTRAR_VENTAS", "EMITIR_BOLETAS"] },
@@ -457,13 +549,13 @@ export const egresoConfig = {
     { key: "hasta", etiqueta: "Hasta", tipo: "fecha" },
     { key: "estado", etiqueta: "Medio", opciones: MEDIOS },
   ],
-  columnas: [
+  columnas: enMayusculas([
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "CONCEPTO", etiqueta: "Concepto" },
     { campo: "PROVEEDOR", etiqueta: "Proveedor" },
     { campo: "MONTO", etiqueta: "Monto" },
     { campo: "MEDIO", etiqueta: "Medio" },
-  ],
+  ]),
   campos: [
     { campo: "FECHA", etiqueta: "Fecha", control: "date", obligatorio: true, defaultHoy: true },
     { campo: "CONCEPTO", etiqueta: "Concepto", control: "text", obligatorio: true },
@@ -484,18 +576,18 @@ export const usuarioConfig = {
   funciones: { nuevo: ["GESTIONAR_USUARIOS"], editar: ["GESTIONAR_USUARIOS"], eliminar: ["GESTIONAR_USUARIOS"] },
   placeholder: "Buscar por usuario o nombre...",
   filtros: [{ key: "estado", etiqueta: "Estado", opciones: ["Activo", "Retirado"] }],
-  columnas: [
-    { campo: "IDUSUARIO", etiqueta: "Usuario" },
-    { campo: "NOMBRE", etiqueta: "Nombre", mayusculas: true },
-    { campo: "APELLIDO", etiqueta: "Apellido", mayusculas: true },
+  columnas: enMayusculas([
+    { campo: "IDUSUARIO", etiqueta: "Usuario", mayusculas: false },
+    { campo: "NOMBRE", etiqueta: "Nombre" },
+    { campo: "APELLIDO", etiqueta: "Apellido" },
     { campo: "TIPOUSUARIO_DESCRIPCION", etiqueta: "Tipo" },
     { campo: "ESTADO", etiqueta: "Estado", tipo: "estado" },
-  ],
+  ]),
   secciones: [
     {
       titulo: "Acceso",
       campos: [
-        { campo: "IDUSUARIO", etiqueta: "Usuario", control: "text", obligatorio: true, soloCrear: true },
+        { campo: "IDUSUARIO", etiqueta: "Usuario", control: "text", obligatorio: true, soloCrear: true, sinMayusculas: true },
         { campo: "CONTRA", etiqueta: "Contraseña", control: "password", ayuda: "Si la dejas vacía al crear, se usa el usuario." },
         { campo: "IDTIPOUSUARIO", etiqueta: "Tipo", control: "select", catalogo: "tiposUsuario", obligatorio: true, defaultValue: "1" },
         { campo: "ESTADO", etiqueta: "Estado", control: "select", opciones: ["Activo", "Retirado"], defaultValue: "Activo" },
@@ -549,17 +641,17 @@ export const auditoriaConfig = {
     },
     { key: "estado", etiqueta: "Tabla", opciones: TABLAS_AUDITORIA },
   ],
-  columnas: [
+  columnas: enMayusculas([
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "HORA", etiqueta: "Hora" },
-    { campo: "IDUSUARIO", etiqueta: "Usuario" },
+    { campo: "IDUSUARIO", etiqueta: "Usuario", mayusculas: false },
     { campo: "OPERACION", etiqueta: "Operación", tipo: "accionAuditoria" },
     { campo: "TABLA", etiqueta: "Tabla" },
     { campo: "IDREGISTRO", etiqueta: "Registro" },
     { campo: "ACCION", etiqueta: "Acción" },
     { campo: "CAMPOS", etiqueta: "Campos modificados", ordenable: false },
     { campo: "MODULO", etiqueta: "Módulo" },
-    { campo: "IP", etiqueta: "IP" },
+    { campo: "IP", etiqueta: "IP", mayusculas: false },
     { campo: "DETALLE", etiqueta: "Detalle", ordenable: false },
-  ],
+  ]),
 };

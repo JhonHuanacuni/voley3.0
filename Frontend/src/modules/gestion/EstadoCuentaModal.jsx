@@ -127,10 +127,10 @@ const DATOS = [
   ["MODIFICADOPOR", "Modificado por"],
 ];
 
-export default function EstadoCuentaModal({ idAlumna, onClose }) {
+export default function EstadoCuentaModal({ idAlumna, pestanaInicial, onClose }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-  const [pestana, setPestana] = useState("datos");
+  const [pestana, setPestana] = useState(pestanaInicial || "datos");
   const [orden, setOrden] = useState(null);
   const [pagina, setPagina] = useState(1);
   const [tamanio, setTamanio] = useState(10);

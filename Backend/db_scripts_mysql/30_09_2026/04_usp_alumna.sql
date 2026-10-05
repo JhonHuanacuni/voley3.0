@@ -6,6 +6,7 @@ DROP PROCEDURE IF EXISTS usp_alumna_insertar;
 DROP PROCEDURE IF EXISTS usp_alumna_actualizar;
 DROP PROCEDURE IF EXISTS usp_alumna_eliminar;
 DROP PROCEDURE IF EXISTS usp_alumna_combo;
+DROP PROCEDURE IF EXISTS usp_alumna_dias_guardar;
 
 DELIMITER $$
 
@@ -91,7 +92,7 @@ BEGIN
            a.CONDICION, a.COLEGIO, a.TALLA, a.SUFREDE, a.COMOENTERO,
            IF(a.UNIFORMEENTREGADO = 1, 'SI', 'NO') AS UNIFORMEENTREGADO,
            a.APODERADO, a.DNIAPODERADO, a.FECHANACAPODERADO, a.GENEROAPODERADO, a.TELAPODERADO,
-           a.DIRECCION, a.IDTURNO, a.ESTADO, a.MOTIVORETIRO, a.FECHARETIRO, a.MENSUALIDAD,
+           a.DIRECCION, a.IDTURNO, a.DIASASISTENCIA, a.ESTADO, a.MOTIVORETIRO, a.FECHARETIRO, a.MENSUALIDAD,
            a.FECHAINSCRIPCION, a.INICIOMENSUALIDAD, a.FINMENSUALIDAD, a.FECHANACIMIENTO,
            c.NOMBRE AS CICLO, t.NOMBRE AS TURNO
     FROM ALUMNA a
@@ -107,8 +108,8 @@ CREATE PROCEDURE usp_alumna_insertar(
     IN p_Uniforme TINYINT, IN p_Apoderado VARCHAR(120), IN p_DniApo VARCHAR(15), IN p_FecNacApo CHAR(8),
     IN p_GeneroApo VARCHAR(20), IN p_TelApo VARCHAR(200), IN p_Direccion VARCHAR(500), IN p_IdTurno VARCHAR(50),
     IN p_Estado VARCHAR(20), IN p_Motivo VARCHAR(500), IN p_FecRetiro CHAR(8), IN p_Mensualidad DECIMAL(10,2),
-    IN p_FecIns CHAR(8), IN p_IniMen CHAR(8), IN p_FinMen CHAR(8), IN p_FecNac CHAR(8),
-    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
+    IN p_FecIns CHAR(8), IN p_IniMen CHAR(8), IN p_FinMen CHAR(8), IN p_FecNac CHAR(8), IN p_Dias VARCHAR(120),
+    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200), OUT p_Id VARCHAR(50)
 )
 proc: BEGIN
     DECLARE v_id VARCHAR(50);
@@ -126,18 +127,18 @@ proc: BEGIN
     INSERT INTO ALUMNA (
         IDALUMNA, NOMBRE, EDAD, DNI, EMAIL, TELEFONO, GENERO, IDCICLO, CONDICION, COLEGIO, TALLA,
         SUFREDE, COMOENTERO, UNIFORMEENTREGADO, APODERADO, DNIAPODERADO, FECHANACAPODERADO,
-        GENEROAPODERADO, TELAPODERADO, DIRECCION, IDTURNO, ESTADO, MOTIVORETIRO, FECHARETIRO,
+        GENEROAPODERADO, TELAPODERADO, DIRECCION, IDTURNO, DIASASISTENCIA, ESTADO, MOTIVORETIRO, FECHARETIRO,
         MENSUALIDAD, FECHAINSCRIPCION, INICIOMENSUALIDAD, FINMENSUALIDAD, FECHANACIMIENTO, FECHACREACION
     ) VALUES (
         v_id, TRIM(p_Nombre), p_Edad, NULLIF(TRIM(IFNULL(p_Dni, '')), ''), NULLIF(TRIM(IFNULL(p_Email, '')), ''),
         p_Telefono, p_Genero, p_IdCiclo, IFNULL(NULLIF(TRIM(IFNULL(p_Condicion, '')), ''), 'Regular'),
         p_Colegio, p_Talla, p_Sufre, p_Como, IFNULL(p_Uniforme, 0), p_Apoderado, p_DniApo, p_FecNacApo,
-        p_GeneroApo, p_TelApo, p_Direccion, p_IdTurno,
+        p_GeneroApo, p_TelApo, p_Direccion, p_IdTurno, NULLIF(TRIM(IFNULL(p_Dias, '')), ''),
         IFNULL(NULLIF(TRIM(IFNULL(p_Estado, '')), ''), 'Activa'),
         p_Motivo, p_FecRetiro, p_Mensualidad, p_FecIns, p_IniMen, p_FinMen, p_FecNac,
         DATE_FORMAT(NOW(), '%d%m%Y')
     );
-    SET p_Resultado = 1; SET p_Mensaje = 'Alumna registrada.';
+    SET p_Resultado = 1; SET p_Mensaje = 'Alumna registrada.'; SET p_Id = v_id;
 END$$
 
 CREATE PROCEDURE usp_alumna_actualizar(
@@ -148,7 +149,7 @@ CREATE PROCEDURE usp_alumna_actualizar(
     IN p_Uniforme TINYINT, IN p_Apoderado VARCHAR(120), IN p_DniApo VARCHAR(15), IN p_FecNacApo CHAR(8),
     IN p_GeneroApo VARCHAR(20), IN p_TelApo VARCHAR(200), IN p_Direccion VARCHAR(500), IN p_IdTurno VARCHAR(50),
     IN p_Estado VARCHAR(20), IN p_Motivo VARCHAR(500), IN p_FecRetiro CHAR(8), IN p_Mensualidad DECIMAL(10,2),
-    IN p_FecIns CHAR(8), IN p_IniMen CHAR(8), IN p_FinMen CHAR(8), IN p_FecNac CHAR(8),
+    IN p_FecIns CHAR(8), IN p_IniMen CHAR(8), IN p_FinMen CHAR(8), IN p_FecNac CHAR(8), IN p_Dias VARCHAR(120),
     OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
 )
 proc: BEGIN
@@ -165,13 +166,26 @@ proc: BEGIN
         COLEGIO = p_Colegio, TALLA = p_Talla, SUFREDE = p_Sufre, COMOENTERO = p_Como,
         UNIFORMEENTREGADO = IFNULL(p_Uniforme, 0), APODERADO = p_Apoderado, DNIAPODERADO = p_DniApo,
         FECHANACAPODERADO = p_FecNacApo, GENEROAPODERADO = p_GeneroApo, TELAPODERADO = p_TelApo,
-        DIRECCION = p_Direccion, IDTURNO = p_IdTurno,
+        DIRECCION = p_Direccion, IDTURNO = p_IdTurno, DIASASISTENCIA = NULLIF(TRIM(IFNULL(p_Dias, '')), ''),
         ESTADO = IFNULL(NULLIF(TRIM(IFNULL(p_Estado, '')), ''), ESTADO),
         MOTIVORETIRO = p_Motivo, FECHARETIRO = p_FecRetiro, MENSUALIDAD = p_Mensualidad,
         FECHAINSCRIPCION = p_FecIns, INICIOMENSUALIDAD = p_IniMen, FINMENSUALIDAD = p_FinMen,
         FECHANACIMIENTO = p_FecNac
     WHERE IDALUMNA = p_Id;
     SET p_Resultado = 1; SET p_Mensaje = 'Alumna actualizada.';
+END$$
+
+-- Días que asiste, elegidos al registrar la matrícula. Vacío: todos los días de su turno.
+CREATE PROCEDURE usp_alumna_dias_guardar(
+    IN p_Id VARCHAR(50), IN p_Dias VARCHAR(120),
+    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
+)
+proc: BEGIN
+    IF NOT EXISTS (SELECT 1 FROM ALUMNA WHERE IDALUMNA = p_Id) THEN
+        SET p_Resultado = 0; SET p_Mensaje = 'La alumna no existe.'; LEAVE proc;
+    END IF;
+    UPDATE ALUMNA SET DIASASISTENCIA = NULLIF(TRIM(IFNULL(p_Dias, '')), '') WHERE IDALUMNA = p_Id;
+    SET p_Resultado = 1; SET p_Mensaje = 'Días guardados.';
 END$$
 
 CREATE PROCEDURE usp_alumna_eliminar(IN p_Id VARCHAR(50), OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200))

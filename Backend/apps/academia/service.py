@@ -1,5 +1,6 @@
 """CRUD de negocio vía stored procedures de VoleyDB."""
 
+import calendar
 import json
 import unicodedata
 from datetime import date
@@ -67,6 +68,12 @@ def _escribir(proc, params):
     return int(ok or 0), mensaje
 
 
+def _escribir_con_id(proc, params):
+    with connection.cursor() as cursor:
+        ok, mensaje, nuevo_id = sp.call_write_outs(cursor, proc, params, ['@_sp_r', '@_sp_m', '@_sp_id'])
+    return int(ok or 0), str(mensaje or ''), nuevo_id
+
+
 def _paginacion(params, extras=None):
     valores = [params.get('buscar') or None, params.get('estado') or None]
     if extras:
@@ -115,6 +122,7 @@ def _alumna_valores(payload):
         texto(payload.get('INICIOMENSUALIDAD'), 8),
         texto(payload.get('FINMENSUALIDAD'), 8),
         texto(payload.get('FECHANACIMIENTO'), 8),
+        texto(payload.get('DIASASISTENCIA'), 120),
     ]
 
 
@@ -134,7 +142,7 @@ def obtener_alumna(id_registro):
 
 
 def insertar_alumna(payload):
-    return _escribir('usp_alumna_insertar', _alumna_valores(payload))
+    return _escribir_con_id('usp_alumna_insertar', _alumna_valores(payload))
 
 
 def actualizar_alumna(id_registro, payload):
@@ -183,12 +191,21 @@ def _turno_valores(payload):
     ]
 
 
+SIN_DIAS_TURNO = (0, 'Marca al menos un día.')
+
+
 def insertar_turno(payload):
-    return _escribir('usp_turno_insertar', _turno_valores(payload))
+    valores = _turno_valores(payload)
+    if not valores[3]:
+        return SIN_DIAS_TURNO
+    return _escribir('usp_turno_insertar', valores)
 
 
 def actualizar_turno(id_registro, payload):
-    return _escribir('usp_turno_actualizar', [id_registro, *_turno_valores(payload)])
+    valores = _turno_valores(payload)
+    if not valores[3]:
+        return SIN_DIAS_TURNO
+    return _escribir('usp_turno_actualizar', [id_registro, *valores])
 
 
 def eliminar_turno(id_registro):
@@ -224,7 +241,7 @@ def _guardar_funciones(id_usuario, payload, resultado):
 def _usuario_valores(payload, incluir_id=False):
     valores = []
     if incluir_id:
-        valores.append(texto(payload.get('IDUSUARIO'), 50))
+        valores.append(texto(payload.get('IDUSUARIO'), 50, mayusculas=False))
     valores.extend([
         texto(payload.get('CONTRA'), 255, mayusculas=False),
         texto(payload.get('NOMBRE'), 100),
@@ -251,12 +268,16 @@ def eliminar_usuario(id_registro):
     return _escribir('usp_usuario_eliminar', [id_registro])
 
 
+PERIODOS_TODOS = 'Todos los periodos'
+
+
 def listar_mensualidades(params):
     return _listar('usp_mensualidad_listar', _paginacion(params, extras=[
         *_rango(params),
         params.get('idciclo') or None,
         params.get('situacion') or None,
         params.get('tipo') or None,
+        1 if params.get('periodos') == PERIODOS_TODOS else 0,
     ]))
 
 
@@ -288,7 +309,15 @@ def renovar_mensualidad(id_registro):
 
 
 def insertar_mensualidad(payload):
-    return _escribir('usp_mensualidad_insertar', _mensualidad_valores(payload))
+    ok, mensaje, nuevo_id = _escribir_con_id('usp_mensualidad_insertar', _mensualidad_valores(payload))
+    if ok and 'DIASASISTENCIA' in payload:
+        ok_dias, mensaje_dias = _escribir('usp_alumna_dias_guardar', [
+            texto(payload.get('IDALUMNA'), 50),
+            texto(payload.get('DIASASISTENCIA'), 120),
+        ])
+        if not ok_dias:
+            return ok, f'{mensaje} Pero no se guardaron los días: {mensaje_dias}', nuevo_id
+    return ok, mensaje, nuevo_id
 
 
 def actualizar_mensualidad(id_registro, payload):
@@ -512,9 +541,11 @@ def obtener_auditoria(id_registro):
 ORDENAN_EN_SP = {listar_auditoria}
 
 
-def asistencia_dia(fecha, id_turno, buscar=''):
+def asistencia_dia(fecha, id_turno, buscar='', todas=False):
     with connection.cursor() as cursor:
-        rows = sp.call_simple(cursor, 'usp_asistencia_dia', [fecha, id_turno or None, str(buscar or '').strip()[:100]])
+        rows = sp.call_simple(cursor, 'usp_asistencia_dia', [
+            fecha, id_turno or None, str(buscar or '').strip()[:100], 1 if todas else 0,
+        ])
     return jsonable(rows)
 
 
@@ -549,6 +580,34 @@ def dashboard_matriculas(params):
     }
 
 
+def dashboard_asistencias(params):
+    desde = _fecha_param(params.get('desde'))
+    hasta = _fecha_param(params.get('hasta'))
+    if not desde or not hasta:
+        raise ValueError('Indica las fechas desde y hasta')
+    with connection.cursor() as cursor:
+        turnos = jsonable(sp.call_simple(cursor, 'usp_dashboard_asistencias', [desde, hasta, params.get('idturno') or None]))
+    totales = {
+        clave: sum(int(fila.get(clave) or 0) for fila in turnos)
+        for clave in ('PRESENTES', 'FALTAS', 'TARDANZAS')
+    }
+    return {'turnos': turnos, 'totales': totales}
+
+
+MESES_DASHBOARD = (3, 6, 12)
+
+
+def dashboard_finanzas(params):
+    try:
+        meses = int(params.get('meses') or 6)
+    except (TypeError, ValueError):
+        meses = 6
+    if meses not in MESES_DASHBOARD:
+        meses = 6
+    with connection.cursor() as cursor:
+        return {'meses': jsonable(sp.call_simple(cursor, 'usp_dashboard_finanzas', [meses]))}
+
+
 def listar_promociones(params):
     return _listar('usp_promocion_listar', _paginacion(params))
 
@@ -567,7 +626,7 @@ def _promocion_valores(payload):
         texto(payload.get('MONTOSIGUIENTES')),
         texto(payload.get('FECHAINICIO'), 8),
         texto(payload.get('FECHAFIN'), 8),
-        texto(payload.get('CONDICIONES'), 500, mayusculas=False),
+        texto(payload.get('CONDICIONES'), 500),
         texto(payload.get('ACTIVO'), 20, mayusculas=False),
     ]
 
@@ -867,6 +926,184 @@ def reporte(tipo, params):
     }
 
 
+def _col(clave, etiqueta, formato, **extra):
+    return {'key': clave, 'label': etiqueta, 'formato': formato, **extra}
+
+
+def _detalle(titulo, columnas, filas, params, sumar=()):
+    totales = {clave: round(sum(float(f.get(clave) or 0) for f in filas), 2) for clave in sumar}
+    total = len(filas)
+    pagina, tamanio = 1, total
+    if str(params.get('todo') or '') != '1':
+        pagina, tamanio = _paginacion_simple(params)
+        filas = filas[(pagina - 1) * tamanio: pagina * tamanio]
+    return {
+        'titulo': titulo,
+        'columnas': columnas,
+        'filas': filas,
+        'totales': totales,
+        'total': total,
+        'pagina': pagina,
+        'tamanio': tamanio,
+    }
+
+
+def _mes_param(params):
+    valor = str(params.get('mes') or '').strip()
+    if len(valor) == 7 and valor[4] == '-' and valor[:4].isdigit() and valor[5:].isdigit():
+        anio, mes = int(valor[:4]), int(valor[5:])
+        if 2000 <= anio <= 2100 and 1 <= mes <= 12:
+            return anio, mes
+    if valor:
+        raise ValueError('Mes no válido')
+    hoy = date.today()
+    return hoy.year, hoy.month
+
+
+def _filtro(params, clave):
+    return str(params.get(clave) or '').strip() or None
+
+
+COLUMNAS_REPORTE_ALUMNAS = [
+    _col('ALUMNA', 'Nombre', _T), _col('EDAD', 'Edad', _E), _col('DNI', 'DNI', _T), _col('EMAIL', 'Email', _T),
+    _col('TELEFONO', 'Contacto', _T), _col('CICLO', 'Categoría', _T), _col('TURNO', 'Turno', _T),
+    _col('HORARIO', 'Horario', _T), _col('DIAS', 'Días de asistencia', _T), _col('ESTADO', 'Estado', _T),
+    _col('CUOTA', 'Cuota mensual', _M), _col('FECHAINSCRIPCION', 'Inscripción', _F),
+    _col('FECHAINICIO', 'Inicio mensualidad', _F), _col('FECHAFIN', 'Fin mensualidad', _F),
+    _col('FECHARETIRO', 'Retiro', _F),
+]
+
+
+def _reporte_alumnas(params):
+    ordenables = [c['key'] for c in COLUMNAS_REPORTE_ALUMNAS]
+    with connection.cursor() as cursor:
+        filas = _sin_orden(sp.call_simple(cursor, 'usp_reporte_alumnas', [
+            _filtro(params, 'buscar'), _filtro(params, 'estado'), _filtro(params, 'idciclo'),
+            _filtro(params, 'idturno'), *_orden_params(params, ordenables),
+        ]))
+    return _detalle('Listado de alumnas', COLUMNAS_REPORTE_ALUMNAS, filas, params)
+
+
+DIAS_SEMANA_CORTOS = ('LU', 'MA', 'MI', 'JU', 'VI', 'SA', 'DO')
+MARCAS_ASISTENCIA = {'Presente': 'A', 'Tarde': 'T', 'Ausente': 'F'}
+
+
+def _texto_pago_mensualidad(fila):
+    monto = fila.get('MONTOMENSUALIDAD')
+    if monto is None:
+        return 'SIN MENSUALIDAD', None
+    if float(monto) <= 0:
+        return 'SIN MONTO DE MENSUALIDAD', None
+    fin = str(fila.get('FECHAFINMENSUALIDAD') or '')
+    partes = [f'S/ {float(monto):.2f}']
+    if len(fin) == 8:
+        partes.append(f'FIN {fin[:2]}/{fin[2:4]}/{fin[4:]}')
+    saldo = float(fila.get('SALDO') or 0)
+    partes.append(f'DEBE S/ {saldo:.2f}' if saldo > 0 else 'PAGADO')
+    return ' · '.join(partes), 'peligro' if saldo > 0 else 'ok'
+
+
+def _reporte_asistencia_mensual(params):
+    anio, mes = _mes_param(params)
+    dias_mes = calendar.monthrange(anio, mes)[1]
+    ordenables = ['ALUMNA', 'CICLO', 'TURNO', 'HORARIO', 'PRESENTES', 'TARDES', 'FALTAS', 'SALDO']
+    with connection.cursor() as cursor:
+        sets = sp.call_sets(cursor, 'usp_reporte_asistencia_mensual', [
+            anio, mes, _filtro(params, 'buscar'), _filtro(params, 'idciclo'), _filtro(params, 'idturno'),
+            *_orden_params(params, ordenables),
+        ])
+    alumnas = _sin_orden(sets[0]) if sets else []
+    marcas = {}
+    for marca in jsonable(sets[1]) if len(sets) > 1 else []:
+        marcas.setdefault(marca['IDALUMNA'], {})[int(marca['DIA'])] = MARCAS_ASISTENCIA.get(marca['ESTADO'], '')
+    for fila in alumnas:
+        dias = marcas.get(fila['IDALUMNA'], {})
+        for dia in range(1, dias_mes + 1):
+            fila[f'D{dia:02d}'] = dias.get(dia, '')
+        fila['PAGO'], fila['PAGOTONO'] = _texto_pago_mensualidad(fila)
+
+    columnas_dias = []
+    for dia in range(1, dias_mes + 1):
+        semana = date(anio, mes, dia).weekday()
+        columnas_dias.append(_col(f'D{dia:02d}', f'{DIAS_SEMANA_CORTOS[semana]} {dia:02d}', _T,
+                                  dia=dia, domingo=semana == 6, ordenable=False))
+    columnas = [
+        _col('ALUMNA', 'Nombres y apellidos', _T),
+        _col('APODERADO', 'Apoderado', _T, soloExportar=True),
+        _col('TELAPODERADO', 'Tel. apoderado', _T, soloExportar=True),
+        _col('TELEFONO', 'Tel. alumna', _T, soloExportar=True),
+        _col('TURNO', 'Turno', _T),
+        _col('HORARIO', 'Horario', _T, soloExportar=True),
+        *columnas_dias,
+        _col('PRESENTES', 'Asist.', _E),
+        _col('TARDES', 'Tard.', _E),
+        _col('FALTAS', 'Faltas', _E),
+        _col('PAGO', 'Pago mensualidad', _T, campoOrden='SALDO'),
+    ]
+    data = _detalle(f'Asistencia mensual — {MESES[mes - 1]} {anio}', columnas, alumnas, params,
+                    sumar=('PRESENTES', 'TARDES', 'FALTAS'))
+    data['mes'] = f'{anio}-{mes:02d}'
+    return data
+
+
+COLUMNAS_EGRESOS_MES = [
+    _col('FECHA', 'Fecha', _F), _col('CONCEPTO', 'Concepto', _T), _col('PROVEEDOR', 'Proveedor', _T),
+    _col('MONTO', 'Monto', _M), _col('MEDIO', 'Medio de pago', _T), _col('OBSERVACIONES', 'Observaciones', _T),
+]
+
+
+def _reporte_ingresos_egresos(params):
+    anio, mes = _mes_param(params)
+    ordenables = [c['key'] for c in COLUMNAS_EGRESOS_MES]
+    with connection.cursor() as cursor:
+        sets = sp.call_sets(cursor, 'usp_reporte_financiero', [anio, mes, *_orden_params(params, ordenables)])
+    resumen = jsonable(sets[0])[0] if sets and sets[0] else {}
+    egresos = _sin_orden(sets[1]) if len(sets) > 1 else []
+    data = _detalle(f'Ingresos y egresos — {MESES[mes - 1]} {anio}', COLUMNAS_EGRESOS_MES, egresos, params,
+                    sumar=('MONTO',))
+    data['resumen'] = resumen
+    data['mes'] = f'{anio}-{mes:02d}'
+    return data
+
+
+COLUMNAS_HISTORIAL_PAGOS = [
+    _col('FECHA', 'Fecha', _F), _col('TIPO', 'Tipo', _T), _col('CODIGO', 'Código', _T), _col('ALUMNA', 'Alumna', _T),
+    _col('CICLO', 'Categoría', _T), _col('DETALLE', 'Detalle', _T), _col('MONTO', 'Monto', _M),
+    _col('MEDIO', 'Método', _T), _col('ESTADO', 'Estado', _T),
+]
+
+
+def _reporte_historial_pagos(params):
+    tipo = _filtro(params, 'tipo')
+    if tipo not in (None, 'mensualidades', 'ventas'):
+        raise ValueError('Tipo no válido')
+    ordenables = [c['key'] for c in COLUMNAS_HISTORIAL_PAGOS]
+    with connection.cursor() as cursor:
+        filas = _sin_orden(sp.call_simple(cursor, 'usp_reporte_historial_pagos', [
+            _filtro(params, 'buscar'), tipo, _fecha_param(params.get('desde')), _fecha_param(params.get('hasta')),
+            _filtro(params, 'idciclo'), *_orden_params(params, ordenables),
+        ]))
+    return _detalle('Historial de pagos', COLUMNAS_HISTORIAL_PAGOS, filas, params, sumar=('MONTO',))
+
+
+MESES = ('Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto',
+         'Septiembre', 'Octubre', 'Noviembre', 'Diciembre')
+
+REPORTES_DETALLE = {
+    'alumnas': _reporte_alumnas,
+    'asistencia-mensual': _reporte_asistencia_mensual,
+    'ingresos-egresos': _reporte_ingresos_egresos,
+    'historial-pagos': _reporte_historial_pagos,
+}
+
+
+def reporte_detalle(tipo, params):
+    generar = REPORTES_DETALLE.get(tipo)
+    if not generar:
+        raise ValueError('Reporte no disponible')
+    return generar(params)
+
+
 def _orden_params(params, permitidas):
     columna = str(params.get('ordenarPor') or '').strip().upper()
     if columna not in permitidas:
@@ -927,11 +1164,11 @@ def catalogos():
         cursor.execute("SELECT IDCICLO, NOMBRE FROM CICLO WHERE ACTIVO = 1 ORDER BY NOMBRE")
         ciclos = [{'value': a, 'label': (b or '').upper()} for a, b in cursor.fetchall()]
         cursor.execute(
-            "SELECT IDTURNO, NOMBRE, HORAINICIO, HORAFIN FROM TURNO WHERE ACTIVO = 1 ORDER BY HORAINICIO, NOMBRE"
+            "SELECT IDTURNO, NOMBRE, HORAINICIO, HORAFIN, DIASACTIVOS FROM TURNO WHERE ACTIVO = 1 ORDER BY HORAINICIO, NOMBRE"
         )
         turnos = [
-            {'value': a, 'label': f'{b} ({c} - {d})'}
-            for a, b, c, d in cursor.fetchall()
+            {'value': a, 'label': f'{b} ({c} - {d})', 'dias': e or ''}
+            for a, b, c, d, e in cursor.fetchall()
         ]
         cursor.execute(
             """

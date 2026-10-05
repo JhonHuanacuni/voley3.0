@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faImage, faUpload } from "@fortawesome/free-solid-svg-icons";
 import CatalogoBuscador from "./CatalogoBuscador";
+import DiasSemana from "./DiasSemana";
 import LineasVenta from "./LineasVenta";
 import MensualidadAlumnaSelect from "./MensualidadAlumnaSelect";
 import NombreBuscador from "./NombreBuscador";
@@ -73,6 +74,10 @@ export default function FieldRenderer({
           </div>
         </div>
       );
+    }
+    if (campo.control === "diasTexto") {
+      const origen = campo.diasDe ? catalogo.find((op) => op.value === valores?.[campo.diasDe]) : null;
+      return <DiasSemana value={value} disabled={disabled} permitidos={origen?.dias} onChange={onChange} />;
     }
     if (campo.control === "lineasVenta") {
       return (
@@ -235,6 +240,7 @@ export default function FieldRenderer({
         </div>
       );
     }
+    const conMayusculas = (campo.control === "text" || campo.control == null) && !campo.sinMayusculas;
     return (
       <input
         type={
@@ -251,16 +257,10 @@ export default function FieldRenderer({
         step={campo.control === "number" ? (campo.step ?? "0.01") : undefined}
         min={campo.control === "number" ? (campo.min ?? "0") : undefined}
         max={campo.control === "number" ? campo.max : undefined}
-        className={campo.control === "text" || campo.control == null ? "input-mayusculas" : undefined}
+        className={conMayusculas ? "input-mayusculas" : undefined}
         value={value}
         disabled={disabled}
-        onChange={(e) =>
-          onChange(
-            campo.control === "password" || campo.control === "date" || campo.control === "time" || campo.control === "number"
-              ? e.target.value
-              : e.target.value.toUpperCase()
-          )
-        }
+        onChange={(e) => onChange(conMayusculas ? e.target.value.toUpperCase() : e.target.value)}
       />
     );
   };

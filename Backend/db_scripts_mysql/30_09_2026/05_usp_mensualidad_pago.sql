@@ -84,10 +84,12 @@ END$$
 -- SITUACION: Pagada, Pendiente (aún en plazo), Vencida (terminó con saldo) o Inactivo.
 -- VIGENCIA: Vigente, Finalizada o Por iniciar según la fecha de hoy.
 -- El rango de fechas toma los periodos que se cruzan con él.
+-- Por defecto devuelve solo el periodo más reciente de cada alumna entre los que cumplen los filtros
+-- (PERIODOS: cuántos tiene en total); con p_Todos = 1 devuelve todos.
 CREATE PROCEDURE usp_mensualidad_listar(
     IN p_Buscar VARCHAR(200), IN p_Estado VARCHAR(20),
     IN p_Desde CHAR(8), IN p_Hasta CHAR(8), IN p_IdCiclo VARCHAR(50),
-    IN p_Situacion VARCHAR(20), IN p_Tipo VARCHAR(20),
+    IN p_Situacion VARCHAR(20), IN p_Tipo VARCHAR(20), IN p_Todos TINYINT,
     IN p_OrdenarPor VARCHAR(50), IN p_Direccion VARCHAR(4),
     IN p_Pagina INT, IN p_Tamanio INT, OUT p_Total INT
 )
@@ -103,7 +105,12 @@ BEGIN
 
     DROP TEMPORARY TABLE IF EXISTS tmp_men_lista;
     CREATE TEMPORARY TABLE tmp_men_lista AS
-    SELECT x.* FROM (
+    SELECT y.* FROM (
+    SELECT x.*,
+           ROW_NUMBER() OVER (PARTITION BY x.IDALUMNA
+                              ORDER BY STR_TO_DATE(x.FECHAINICIO, '%d%m%Y') DESC, x.IDMENSUALIDAD DESC) AS RN,
+           (SELECT COUNT(*) FROM MENSUALIDAD c WHERE c.IDALUMNA = x.IDALUMNA) AS PERIODOS
+    FROM (
         SELECT m.IDMENSUALIDAD, a.NOMBRE AS ALUMNA, m.IDALUMNA, c.NOMBRE AS CICLO, m.FECHAINICIO, m.FECHAFIN,
                m.MONTO, m.MONTOREGULAR, m.ESTADO, m.IDPROMOCION, pr.NOMBRE AS PROMOCION,
                GREATEST(IFNULL(m.MONTOREGULAR, m.MONTO) - m.MONTO, 0) AS DESCUENTO,
@@ -141,7 +148,9 @@ BEGIN
           AND (v_desde IS NULL OR STR_TO_DATE(m.FECHAFIN, '%d%m%Y') >= v_desde)
     ) x
     WHERE (p_Situacion IS NULL OR p_Situacion = '' OR x.SITUACION = p_Situacion OR x.VIGENCIA = p_Situacion)
-      AND (p_Tipo IS NULL OR p_Tipo = '' OR x.TIPO = p_Tipo);
+      AND (p_Tipo IS NULL OR p_Tipo = '' OR x.TIPO = p_Tipo)
+    ) y
+    WHERE IFNULL(p_Todos, 0) = 1 OR y.RN = 1;
 
     SELECT COUNT(*) INTO p_Total FROM tmp_men_lista;
     SELECT * FROM tmp_men_lista
@@ -251,7 +260,7 @@ CREATE PROCEDURE usp_mensualidad_insertar(
     IN p_IdAlumna VARCHAR(50), IN p_Inicio CHAR(8), IN p_Fin CHAR(8),
     IN p_Monto DECIMAL(10,2), IN p_MontoRegular DECIMAL(10,2), IN p_IdPromocion VARCHAR(50),
     IN p_Periodo VARCHAR(20), IN p_Notas VARCHAR(500),
-    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
+    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200), OUT p_Id VARCHAR(50)
 )
 proc: BEGIN
     DECLARE v_id VARCHAR(50);
@@ -272,7 +281,7 @@ proc: BEGIN
     VALUES (v_id, p_IdAlumna, p_Inicio, p_Fin, v_monto, v_regular, IF(v_inactivo = 1, 'Inactivo', 'Deuda'),
             IF(v_inactivo = 1, NULL, NULLIF(p_IdPromocion, '')), p_Notas, DATE_FORMAT(NOW(), '%d%m%Y'));
     CALL usp_mensualidad_recalcular(v_id);
-    SET p_Resultado = 1;
+    SET p_Resultado = 1; SET p_Id = v_id;
     IF v_inactivo = 1 THEN
         SET p_Mensaje = 'Periodo inactivo registrado. No genera deuda.';
     ELSEIF v_regular IS NOT NULL AND v_regular > v_monto THEN

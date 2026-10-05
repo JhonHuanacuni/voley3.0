@@ -33,8 +33,9 @@ function visibleParaTipo(item, values) {
 }
 
 function campoVisibleEnFormulario(campo, values, secciones) {
-  if (campo.visibleSi && String(values?.[campo.visibleSi.campo] ?? "") !== String(campo.visibleSi.valor)) {
-    return false;
+  if (campo.visibleSi) {
+    const actual = String(values?.[campo.visibleSi.campo] ?? "");
+    if (campo.visibleSi.lleno ? !actual.trim() : actual !== String(campo.visibleSi.valor)) return false;
   }
   if (!visibleParaTipo(campo, values)) return false;
   if (!secciones?.length) return true;
@@ -162,6 +163,9 @@ export default function FormPage({
         !String(values[c.campo] ?? "").trim()
       ) {
         next[c.campo] = `Ingresa ${c.etiqueta.toLowerCase()}.`;
+      }
+      if (c.control === "diasTexto" && c.obligatorio && modo !== "ver" && !String(values[c.campo] ?? "").trim()) {
+        next[c.campo] = "Marca al menos un día.";
       }
       if (c.validacion === "email" && String(values[c.campo] ?? "").trim()) {
         const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(values[c.campo]).trim());

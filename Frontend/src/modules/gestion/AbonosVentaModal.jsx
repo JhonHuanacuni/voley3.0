@@ -189,7 +189,13 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
                 </label>
                 <label className="abono-form-obs">
                   Observación
-                  <input type="text" maxLength={300} value={form.OBSERVACION} onChange={(e) => setForm({ ...form, OBSERVACION: e.target.value })} />
+                  <input
+                    type="text"
+                    maxLength={300}
+                    className="input-mayusculas"
+                    value={form.OBSERVACION}
+                    onChange={(e) => setForm({ ...form, OBSERVACION: e.target.value.toUpperCase() })}
+                  />
                 </label>
                 <button type="submit" className="btn-primary" disabled={guardando}>
                   {guardando ? "Registrando…" : "Registrar abono"}

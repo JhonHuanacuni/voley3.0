@@ -121,6 +121,9 @@ export default function FormModal({
       ) {
         next[c.campo] = `Ingresa ${c.etiqueta.toLowerCase()}.`;
       }
+      if (c.control === "diasTexto" && c.obligatorio && modo !== "ver" && !String(values[c.campo] ?? "").trim()) {
+        next[c.campo] = "Marca al menos un día.";
+      }
       if (c.validacion === "email" && String(values[c.campo] ?? "").trim()) {
         const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(values[c.campo]).trim());
         if (!ok) next[c.campo] = "Ingresa un email válido.";

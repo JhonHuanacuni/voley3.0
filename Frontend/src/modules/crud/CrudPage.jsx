@@ -21,7 +21,7 @@ import AbonosVentaModal from "../gestion/AbonosVentaModal";
 import DetalleAuditoriaModal from "../../components/mantenedor/DetalleAuditoriaModal";
 import "../../styles/mantenedor.css";
 
-export default function CrudPage({ config }) {
+export default function CrudPage({ config, inicio, onIrANuevo }) {
   const cfg = config;
   const crud = useCrud({
     entidad: cfg.entidad,
@@ -29,8 +29,10 @@ export default function CrudPage({ config }) {
     ordenInicial: cfg.ordenInicial,
     filtrosIniciales: cfg.filtrosIniciales || {},
   });
-  const [vista, setVista] = useState("lista");
+  const [vista, setVista] = useState(inicio ? "form" : "lista");
   const [modo, setModo] = useState("crear");
+  const [valoresNuevo, setValoresNuevo] = useState(inicio || null);
+  const [siguiente, setSiguiente] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [toast, setToast] = useState(null);
   const [catalogos, setCatalogos] = useState({});
@@ -70,6 +72,7 @@ export default function CrudPage({ config }) {
 
   const abrirCrear = () => {
     crud.setRegistro(null);
+    setValoresNuevo(null);
     setModo("crear");
     setVista("form");
   };
@@ -113,10 +116,27 @@ export default function CrudPage({ config }) {
     }
   };
 
+  const ofrecerSiguientePaso = async (id, payload) => {
+    const paso = cfg.despuesDeCrear;
+    if (!paso || !id || !onIrANuevo) return;
+    if (!puede(...paso.funciones) || paso.aplica?.(payload) === false) return;
+    try {
+      const valores = await paso.valores(id, payload);
+      setSiguiente({ paso, valores, mensaje: paso.mensaje(payload, valores) });
+    } catch {
+      /* sin datos para el paso siguiente se queda en la lista */
+    }
+  };
+
   const guardar = async (payload) => {
-    const mensaje = modo === "crear"
-      ? await crud.insertar(payload)
-      : await crud.actualizar(crud.registro[cfg.pk], payload);
+    if (modo === "crear") {
+      const { mensaje, id } = await crud.insertar(payload);
+      setToast({ mensaje, tipo: "success" });
+      volverLista();
+      ofrecerSiguientePaso(id, payload);
+      return;
+    }
+    const mensaje = await crud.actualizar(crud.registro[cfg.pk], payload);
     setToast({ mensaje, tipo: "success" });
     volverLista();
   };
@@ -222,7 +242,7 @@ export default function CrudPage({ config }) {
   };
 
   const tituloForm = modo === "crear"
-    ? `${cfg.femenino ? "Nueva" : "Nuevo"} ${cfg.singular || cfg.titulo.toLowerCase()}`
+    ? cfg.tituloNuevo || `${cfg.femenino ? "Nueva" : "Nuevo"} ${cfg.singular || cfg.titulo.toLowerCase()}`
     : modo === "editar"
       ? `Editar ${cfg.singular || cfg.titulo.toLowerCase()}`
       : `Ver ${cfg.singular || cfg.titulo.toLowerCase()}`;
@@ -293,6 +313,7 @@ export default function CrudPage({ config }) {
           catalogos={catalogos}
           onCancel={volverLista}
           onSubmit={guardar}
+          createDefaults={modo === "crear" && valoresNuevo ? valoresNuevo : undefined}
           onFieldChange={cfg.onFieldChange
             ? (campo, valor, setValues) => cfg.onFieldChange(campo, valor, setValues, catalogos)
             : undefined}
@@ -312,6 +333,7 @@ export default function CrudPage({ config }) {
         vista={cfg.titulo}
         onNuevo={puedeNuevo ? abrirCrear : undefined}
         mostrarNuevo={puedeNuevo}
+        nuevoEtiqueta={cfg.nuevoEtiqueta}
       />
       <div className="mantenedor-card">
         <Toolbar
@@ -389,6 +411,16 @@ export default function CrudPage({ config }) {
         confirmando={confirmando}
         onCancel={() => setConfirm(null)}
         onConfirm={confirmarEliminar}
+      />
+      <ConfirmDialog
+        abierto={Boolean(siguiente)}
+        titulo={siguiente?.paso.titulo}
+        mensaje={siguiente?.mensaje}
+        confirmLabel={siguiente?.paso.boton}
+        cancelLabel="Ahora no"
+        variante="primary"
+        onCancel={() => setSiguiente(null)}
+        onConfirm={() => onIrANuevo(siguiente.paso.pagina, siguiente.valores)}
       />
       {vista === "form" && cfg.formulario === "modal" && (
         <FormModal
