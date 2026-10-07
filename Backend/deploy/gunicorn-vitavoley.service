@@ -1,0 +1,19 @@
+[Unit]
+Description=Gunicorn - VITA VOLEY API (vitavoley.usercodex.com)
+After=network.target mysql.service
+
+[Service]
+User=usercodex
+Group=www-data
+WorkingDirectory=/home/usercodex/vitavoley_src/Backend
+EnvironmentFile=/home/usercodex/vitavoley_src/Backend/.env
+ExecStart=/home/usercodex/vitavoley_src/Backend/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 127.0.0.1:8006 \
+    --timeout 120 \
+    voley_project.wsgi:application
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

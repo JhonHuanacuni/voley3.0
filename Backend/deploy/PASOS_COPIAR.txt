@@ -1,0 +1,163 @@
+# VITA VOLEY 3.0 — comandos para copiar (Linode)
+#
+# Servidor:           198.58.117.160  (el mismo de Academia / DecoCake / Kaysen)
+# SSH:                usercodex@198.58.117.160
+# Puerto Gunicorn:    8006  (8000 restaurante, 8003 academia, 8004 decocake, 8005 kaysen)
+# Carpetas:           ~/vitavoley_src    ~/vitavoley_front
+# Dominio:            vitavoley.usercodex.com  (DNS en Linode Cloud Manager)
+# Base MySQL:         VoleyDB
+# Repo:               https://github.com/JhonHuanacuni/voley3.0.git
+
+# =============================================================================
+# 1) DNS — Linode Cloud Manager → Domains → usercodex.com → Add an A/AAAA Record
+# =============================================================================
+#   Hostname: vitavoley    IP: 198.58.117.160    TTL: Default
+#
+# Comprobar en PowerShell de tu PC (5 a 30 min):
+#   nslookup vitavoley.usercodex.com 8.8.8.8
+# Debe responder 198.58.117.160 antes del paso 10 (HTTPS).
+
+# =============================================================================
+# 2) Comprobar que el puerto 8006 está libre — consola SSH (Bitvise)
+# =============================================================================
+
+ss -ltnp | grep ':800'
+
+# Si 8006 aparece ocupado, usa otro (8007...) y cámbialo en
+# deploy/gunicorn-vitavoley.service y en los dos .conf de Apache.
+
+# =============================================================================
+# 3) Base de datos — consola SSH
+# =============================================================================
+
+sudo mysql
+
+# Dentro de mysql:
+
+CREATE DATABASE IF NOT EXISTS VoleyDB
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+GRANT ALL PRIVILEGES ON VoleyDB.* TO 'usercodex'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+
+# =============================================================================
+# 4) Código desde GitHub — consola SSH
+# =============================================================================
+
+cd ~
+git clone https://github.com/JhonHuanacuni/voley3.0.git vitavoley_src
+mkdir -p ~/vitavoley_front ~/vitavoley_src/Backend/media
+
+# Si el repo es privado, git pide usuario y contraseña:
+#   usuario = JhonHuanacuni, contraseña = Personal Access Token de GitHub
+
+# =============================================================================
+# 5) .env de producción — consola SSH
+# =============================================================================
+
+grep DB_PASSWORD ~/academia_src/Backend/.env
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+
+cd ~/vitavoley_src/Backend
+cp deploy/env.production.example .env
+nano .env
+
+# En nano: pega la contraseña MySQL en DB_PASSWORD y el token en SECRET_KEY
+# Ctrl+O Enter  Ctrl+X
+
+# =============================================================================
+# 6) Instalar backend + crear VoleyDB — consola SSH
+# =============================================================================
+
+cd ~/vitavoley_src/Backend
+chmod +x scripts/bootstrap_server.sh scripts/actualizar_servidor.sh
+./scripts/bootstrap_server.sh
+
+# Crea VoleyDB con el usuario vita / vita (administrador).
+
+# =============================================================================
+# 7) (Opcional) Pasar los datos reales de voley 2.0 (PythonAnywhere)
+# =============================================================================
+# a) PythonAnywhere → Files → voley2.0/db.sqlite3 → Download
+# b) SFTP (Bitvise): sube ese archivo a
+#      /home/usercodex/vitavoley_src/Backend/voley2.sqlite3
+# c) Consola SSH (BORRA alumnas, pagos, ventas, usuarios... de VoleyDB y los
+#    reemplaza por los de voley 2.0):
+
+cd ~/vitavoley_src/Backend
+SQLITE_PATH=$HOME/vitavoley_src/Backend/voley2.sqlite3 venv/bin/python scripts/migrar_sqlite.py
+
+# Los usuarios de voley 2.0 conservan su contraseña.
+
+# =============================================================================
+# 8) Gunicorn — consola SSH
+# =============================================================================
+
+sudo cp ~/vitavoley_src/Backend/deploy/gunicorn-vitavoley.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable gunicorn-vitavoley
+sudo systemctl start gunicorn-vitavoley
+sudo systemctl status gunicorn-vitavoley --no-pager
+
+# Prueba rápida: HTTP 200 = OK; "Connection refused" = falla
+curl -I http://127.0.0.1:8006/api/schema/
+
+# =============================================================================
+# 9) Frontend — PowerShell EN TU PC (no en Linode)
+# =============================================================================
+
+cd E:\STARTUP\voley3.0\Frontend
+npm install
+npm run build
+
+# SFTP: sube el CONTENIDO de Frontend\dist\*  →  /home/usercodex/vitavoley_front/
+# (index.html debe quedar en /home/usercodex/vitavoley_front/index.html)
+
+# =============================================================================
+# 10) Apache — consola SSH
+# =============================================================================
+
+sudo cp ~/vitavoley_src/Backend/deploy/vitavoley.usercodex.com.conf /etc/apache2/sites-available/
+sudo a2enmod proxy proxy_http rewrite
+sudo a2ensite vitavoley.usercodex.com.conf
+chmod 755 /home/usercodex
+sudo chown -R usercodex:www-data /home/usercodex/vitavoley_front
+sudo chown -R usercodex:www-data /home/usercodex/vitavoley_src/Backend/staticfiles
+sudo chown -R usercodex:www-data /home/usercodex/vitavoley_src/Backend/media
+sudo apache2ctl configtest && sudo systemctl reload apache2
+
+# Prueba: http://vitavoley.usercodex.com  (aún sin candado)
+
+# =============================================================================
+# 11) HTTPS — consola SSH (solo cuando nslookup ya dé 198.58.117.160)
+# =============================================================================
+
+sudo certbot --apache -d vitavoley.usercodex.com
+
+# Si HTTPS da 404 (Certbot a veces deja el :443 sin DocumentRoot):
+sudo cp ~/vitavoley_src/Backend/deploy/vitavoley.usercodex.com-le-ssl.conf /etc/apache2/sites-available/
+sudo apache2ctl configtest && sudo systemctl reload apache2
+
+# =============================================================================
+# 12) Seguridad — en la app
+# =============================================================================
+# Entra con vita / vita y cambia esa contraseña el mismo día:
+#   Administración → Usuarios → vita → Editar → Contraseña.
+# Si migraste voley 2.0 (paso 7), el usuario vita también se crea con clave "vita".
+
+# =============================================================================
+# Si algo falla
+# =============================================================================
+sudo journalctl -u gunicorn-vitavoley -n 80 --no-pager
+sudo tail -n 50 /var/log/apache2/vitavoley_error.log
+
+# =============================================================================
+# Actualizar después (cambios nuevos)
+# =============================================================================
+# Backend (en tu PC: git push; luego en SSH):
+~/vitavoley_src/Backend/scripts/actualizar_servidor.sh
+# Si el cambio trae scripts SQL nuevos o modificados, pásalos por nombre
+# (nunca 01_esquema.sql, que borra la base):
+~/vitavoley_src/Backend/scripts/actualizar_servidor.sh 11_usp_reportes_detalle.sql
+#
+# Frontend: npm run build en tu PC y vuelve a subir Frontend\dist\* a ~/vitavoley_front

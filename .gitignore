@@ -6,4 +6,6 @@ __pycache__/
 node_modules/
 dist/
 media/
+staticfiles/
+*.sqlite3
 *.log

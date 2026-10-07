@@ -1,0 +1,11 @@
+# VITA VOLEY 3.0 — Linode
+# Servidor compartido: IP 198.58.117.160  usuario SSH usercodex
+# Gunicorn 127.0.0.1:8006   (8000 restaurante, 8003 academia, 8004 decocake, 8005 kaysen)
+# Código: /home/usercodex/vitavoley_src
+# Front:  /home/usercodex/vitavoley_front
+# Dominio: vitavoley.usercodex.com  (DNS en Linode Cloud Manager)
+# BD MySQL: VoleyDB
+# Servicio: gunicorn-vitavoley.service
+# Carga BD: ./scripts/bootstrap_server.sh  (no phpMyAdmin)
+# Datos de voley 2.0: scripts/migrar_sqlite.py con el db.sqlite3 de PythonAnywhere
+# Repo: https://github.com/JhonHuanacuni/voley3.0.git

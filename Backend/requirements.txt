@@ -5,3 +5,4 @@ python-dotenv>=1.0
 django-cors-headers>=4.0
 djangorestframework>=3.15,<3.16
 drf-spectacular>=0.25
+gunicorn>=22.0

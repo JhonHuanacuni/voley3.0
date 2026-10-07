@@ -8,6 +8,10 @@ File > Open SQL Script y se ejecutan con el botón del rayo
 Uso:
   cd Backend
   .venv\\Scripts\\python.exe scripts\\run_mysql_scripts.py
+  .venv\\Scripts\\python.exe scripts\\run_mysql_scripts.py 11_usp_reportes_detalle.sql 12_usp_accesos.sql
+
+Sin argumentos aplica todo, empezando por 01_esquema.sql (borra VoleyDB).
+Con nombres de archivo aplica solo esos, en el orden dado.
 """
 from __future__ import annotations
 
@@ -74,6 +78,13 @@ def split_sql(content: str) -> list[str]:
 
 def main() -> int:
     load_dotenv(ROOT / ".env")
+    order = ORDER
+    if len(sys.argv) > 1:
+        order = [SCRIPTS / Path(nombre).name for nombre in sys.argv[1:]]
+        faltan = [p.name for p in order if not p.is_file()]
+        if faltan:
+            print(f"No existen en {SCRIPTS}: {', '.join(faltan)}")
+            return 1
     host = os.getenv("DB_HOST", "127.0.0.1")
     port = int(os.getenv("DB_PORT", "3306"))
     user = os.getenv("DB_USER", "root")
@@ -82,7 +93,7 @@ def main() -> int:
     conn = pymysql.connect(host=host, port=port, user=user, password=password, charset="utf8mb4", collation="utf8mb4_unicode_ci", autocommit=True)
     try:
         with conn.cursor() as cur:
-            for path in ORDER:
+            for path in order:
                 print(f"\n=== {path.name} ===")
                 for i, stmt in enumerate(split_sql(path.read_text(encoding="utf-8")), 1):
                     preview = " ".join(stmt.split())[:100]

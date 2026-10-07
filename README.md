@@ -81,6 +81,18 @@ npm run dev
 
 La aplicación queda en `http://127.0.0.1:5173/`. Vite reenvía `/api` y `/media` al backend del puerto `8001`.
 
+## Producción
+
+Se publica en [vitavoley.usercodex.com](https://vitavoley.usercodex.com), en el Linode compartido (`198.58.117.160`) con Apache, Gunicorn (puerto `8006`) y MySQL 8.
+
+Todo lo necesario está en `Backend/deploy/`:
+
+- `PASOS_COPIAR.txt`: instalación paso a paso y cómo actualizar.
+- `env.production.example`: plantilla del `.env` del servidor.
+- `gunicorn-vitavoley.service` y los `.conf` de Apache.
+
+Para publicar cambios del backend, haz `git push` y en el servidor ejecuta `~/vitavoley_src/Backend/scripts/actualizar_servidor.sh`. El frontend se compila en tu PC con `npm run build` y se sube `Frontend/dist/*` a `~/vitavoley_front/`.
+
 ## Acceso
 
 Usuario local de verificación: `vita` / `vita` (administrador).
