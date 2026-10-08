@@ -188,7 +188,11 @@ export default function FormPage({
     }
 
     if (Object.keys(next).length > 0) {
-      next._form = "Completa los campos obligatorios marcados en rojo.";
+      const visibles = new Set(camposValidar.map((c) => c.campo));
+      const ocultos = Object.keys(next).filter((k) => !visibles.has(k)).map((k) => next[k]);
+      next._form = ocultos.length
+        ? ocultos.join(" ")
+        : "Completa los campos obligatorios marcados en rojo.";
     }
     setErrors(next);
     return Object.keys(next).filter((k) => k !== "_form").length === 0;

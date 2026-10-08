@@ -590,6 +590,14 @@ export const usuarioConfig = {
       campos: [
         { campo: "IDUSUARIO", etiqueta: "Usuario", control: "text", obligatorio: true, soloCrear: true, sinMayusculas: true },
         { campo: "CONTRA", etiqueta: "Contraseña", control: "password", ayuda: "Si la dejas vacía al crear, se usa el usuario." },
+        {
+          campo: "CONFIRMAR_CONTRA",
+          etiqueta: "Confirmar contraseña",
+          control: "password",
+          soloCrear: true,
+          soloFrontend: true,
+          visibleSi: { campo: "CONTRA", lleno: true },
+        },
         { campo: "IDTIPOUSUARIO", etiqueta: "Tipo", control: "select", catalogo: "tiposUsuario", obligatorio: true, defaultValue: "1" },
         { campo: "ESTADO", etiqueta: "Estado", control: "select", opciones: ["Activo", "Retirado"], defaultValue: "Activo" },
       ],
