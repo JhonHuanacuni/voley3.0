@@ -153,6 +153,10 @@ def eliminar_alumna(id_registro):
     return _escribir('usp_alumna_eliminar', [id_registro])
 
 
+def reactivar_alumna(id_registro):
+    return _escribir('usp_alumna_reactivar', [id_registro])
+
+
 def listar_ciclos(params):
     return _listar('usp_ciclo_listar', _paginacion(params))
 

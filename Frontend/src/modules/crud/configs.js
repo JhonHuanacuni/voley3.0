@@ -127,7 +127,7 @@ export const alumnaConfig = {
   columnas: columnasAlumna,
   secciones: seccionesAlumna,
   traza: true,
-  acciones: ["estadoCuenta"],
+  acciones: ["reactivar", "estadoCuenta"],
   funciones: { nuevo: ["REGISTRAR_ALUMNAS"] },
   despuesDeCrear: {
     titulo: "¿Continuar con la matrícula?",

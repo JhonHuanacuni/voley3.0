@@ -27,6 +27,7 @@ from apps.academia.service import (
     listar_ordenado,
     marcar_asistencia,
     mensualidades_por_alumna,
+    reactivar_alumna,
     renovar_mensualidad,
     reporte,
     reporte_detalle,
@@ -215,6 +216,20 @@ def mensualidad_renovar_view(request, id_registro):
         return denegado
     try:
         ok, mensaje = renovar_mensualidad(id_registro)
+        return JsonResponse({'ok': bool(ok), 'mensaje': mensaje}, status=200 if ok else 400)
+    except Exception as exc:
+        return JsonResponse({'error': str(exc)}, status=500)
+
+
+@csrf_exempt
+def alumna_reactivar_view(request, id_registro):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Método no permitido'}, status=405)
+    denegado = _exigir(request, 'MODIFICAR_OPERACIONES')
+    if denegado:
+        return denegado
+    try:
+        ok, mensaje = reactivar_alumna(id_registro)
         return JsonResponse({'ok': bool(ok), 'mensaje': mensaje}, status=200 if ok else 400)
     except Exception as exc:
         return JsonResponse({'error': str(exc)}, status=500)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileExcel, faFileInvoiceDollar, faFilePdf, faHandHoldingDollar, faRotate } from "@fortawesome/free-solid-svg-icons";
+import { faFileExcel, faFileInvoiceDollar, faFilePdf, faHandHoldingDollar, faRotate, faUserCheck } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
 import { dbToTexto, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
 import { descargarReporteVentas } from "../../utils/reporteVentas";
@@ -172,7 +172,9 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
         ? await anularRecibo(confirm.id)
         : confirm.tipo === "renovar"
           ? await renovarPeriodo(confirm.id)
-          : await crud.eliminar(confirm.id);
+          : confirm.tipo === "reactivar"
+            ? await reactivarAlumna(confirm.id)
+            : await crud.eliminar(confirm.id);
       setToast({ mensaje, tipo: "success" });
       setConfirm(null);
       crud.listar();
@@ -203,6 +205,16 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
     return data.mensaje;
   };
 
+  const reactivarAlumna = async (id) => {
+    const res = await fetch(`/api/alumnas/${encodeURIComponent(id)}/reactivar/`, {
+      method: "POST",
+      headers: { "X-IdUsuario": localStorage.getItem("idusuario") || "" },
+    });
+    const data = await parseJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "No se pudo reactivar a la alumna");
+    return data.mensaje;
+  };
+
   const accionesExtra = (cfg.acciones || [])
     .map((accion) => {
       if (accion === "renovar") {
@@ -217,6 +229,16 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
             id: row[cfg.pk],
             nombre: `${row.ALUMNA} (${dbToTexto(row.FECHAINICIO)} al ${dbToTexto(row.FECHAFIN)})`,
           }),
+        };
+      }
+      if (accion === "reactivar") {
+        if (!puede("MODIFICAR_OPERACIONES")) return null;
+        return {
+          id: "reactivar",
+          icono: faUserCheck,
+          titulo: "Reactivar alumna",
+          visible: (row) => Boolean(row.ESTADO) && row.ESTADO !== "Activa",
+          onClick: (row) => setConfirm({ tipo: "reactivar", id: row[cfg.pk], nombre: row.NOMBRE }),
         };
       }
       if (accion === "abonos") {
@@ -253,6 +275,13 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
         titulo: "Generar periodo siguiente",
         mensaje: `Se creará el periodo que sigue a ${confirm.nombre}. Si tiene promoción, el monto sale de la promoción.`,
         boton: "Generar",
+      };
+    }
+    if (confirm.tipo === "reactivar") {
+      return {
+        titulo: "Reactivar alumna",
+        mensaje: `¿Reactivar a ${confirm.nombre}? Vuelve a la lista de alumnas activas y se borran la fecha y el motivo del retiro (quedan en la auditoría).`,
+        boton: "Reactivar",
       };
     }
     return {

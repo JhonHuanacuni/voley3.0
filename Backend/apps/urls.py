@@ -24,6 +24,7 @@ urlpatterns = [
     path('abonos/<str:id_abono>/anular/', academia.abono_anular_view, name='abono_anular'),
     path('mensajes/vigentes/', academia.mensajes_vigentes_view, name='mensajes_vigentes'),
     path('mensualidades/<str:id_registro>/renovar/', academia.mensualidad_renovar_view, name='mensualidad_renovar'),
+    path('alumnas/<str:id_registro>/reactivar/', academia.alumna_reactivar_view, name='alumna_reactivar'),
     path('estado-cuenta/<str:id_alumna>/', academia.estado_cuenta_view, name='estado_cuenta'),
     path('estado-cuenta/<str:id_alumna>/<slug:seccion>/', academia.estado_cuenta_seccion_view,
          name='estado_cuenta_seccion'),
