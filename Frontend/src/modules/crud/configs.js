@@ -350,6 +350,7 @@ export const pagoConfig = {
   entidad: "pagos",
   pk: "IDPAGO",
   usaCatalogos: true,
+  recibo: "pago",
   traza: true,
   acciones: ["estadoCuenta"],
   funciones: { nuevo: ["EMITIR_RECIBOS"] },
@@ -444,7 +445,7 @@ export const ventaConfig = {
   entidad: "ventas",
   pk: "IDVENTA",
   usaCatalogos: true,
-  boleta: true,
+  recibo: "venta",
   placeholder: "Buscar por N.° de recibo, nombre o producto...",
   columnas: enMayusculas([
     { campo: "NUMERO", etiqueta: "Recibo" },

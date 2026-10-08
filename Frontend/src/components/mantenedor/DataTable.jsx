@@ -261,7 +261,8 @@ export default function DataTable({
   onWhatsapp,
   onVerPagos,
   onVerMensualidades,
-  onVerBoleta,
+  onVerRecibo,
+  onEnviarRecibo,
   onAnular,
   onReintentar,
   accionesExtra = [],
@@ -283,7 +284,7 @@ export default function DataTable({
               {columnas.map((c) => (
                 <th key={c.campo}>{c.etiqueta}</th>
               ))}
-              {onVerBoleta && <th>Ver boleta</th>}
+              {onVerRecibo && <th>Recibo</th>}
               {mostrarAcciones && <th className="col-actions">Acciones</th>}
             </tr>
           </thead>
@@ -295,7 +296,7 @@ export default function DataTable({
                     <div className="skeleton-bar" />
                   </td>
                 ))}
-                {onVerBoleta && (
+                {onVerRecibo && (
                   <td>
                     <div className="skeleton-bar" />
                   </td>
@@ -347,7 +348,7 @@ export default function DataTable({
                 {col.etiqueta} {onOrden && <SortIcon col={col} orden={orden} />}
               </th>
             ))}
-            {onVerBoleta && <th>Ver boleta</th>}
+            {onVerRecibo && <th>Recibo</th>}
             {mostrarAcciones && <th className="col-actions">Acciones</th>}
           </tr>
         </thead>
@@ -364,11 +365,23 @@ export default function DataTable({
                   ) : renderCell(col, row, index, offset)}
                 </td>
               ))}
-              {onVerBoleta && (
+              {onVerRecibo && (
                 <td>
-                  <button type="button" className="btn-boleta" onClick={() => onVerBoleta(row)}>
-                    Ver boleta
-                  </button>
+                  <div className="recibo-acciones">
+                    <button type="button" className="btn-boleta" onClick={() => onVerRecibo(row)}>
+                      Ver
+                    </button>
+                    {onEnviarRecibo && !["anulado", "eliminado"].includes(String(row.ESTADO_RECIBO || "").toLowerCase()) && (
+                      <button
+                        type="button"
+                        className="btn-recibo-enviar"
+                        title="Abrir WhatsApp del cliente y descargar el recibo"
+                        onClick={() => onEnviarRecibo(row)}
+                      >
+                        <FontAwesomeIcon icon={faCommentDots} /> Enviar
+                      </button>
+                    )}
+                  </div>
                 </td>
               )}
               {mostrarAcciones && (

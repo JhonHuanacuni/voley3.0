@@ -6,6 +6,7 @@ import { dbToTexto, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fec
 import { descargarReporteVentas } from "../../utils/reporteVentas";
 import { alCambiarFunciones, puede } from "../../utils/sesion";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
+import { descargarRecibo, enlaceWhatsappRecibo, prepararRecibo } from "../../utils/recibo";
 import TrazabilidadPanel from "../../components/mantenedor/TrazabilidadPanel";
 import { useCrud } from "../../hooks/useCrud";
 import PageHeader from "../../components/mantenedor/PageHeader";
@@ -15,7 +16,7 @@ import Pagination from "../../components/mantenedor/Pagination";
 import FormPage from "../../components/mantenedor/FormPage";
 import FormModal from "../../components/mantenedor/FormModal";
 import ConfirmDialog from "../../components/mantenedor/ConfirmDialog";
-import BoletaVenta from "../../components/mantenedor/BoletaVenta";
+import ReciboModal from "../../components/mantenedor/ReciboModal";
 import Toast from "../../components/mantenedor/feedback/Toast";
 import AbonosVentaModal from "../gestion/AbonosVentaModal";
 import DetalleAuditoriaModal from "../../components/mantenedor/DetalleAuditoriaModal";
@@ -37,7 +38,7 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
   const [toast, setToast] = useState(null);
   const [catalogos, setCatalogos] = useState({});
   const [confirmando, setConfirmando] = useState(false);
-  const [boleta, setBoleta] = useState(null);
+  const [recibo, setRecibo] = useState(null);
   const [descargando, setDescargando] = useState(false);
   const [abonosVenta, setAbonosVenta] = useState(null);
   const [detalleAuditoria, setDetalleAuditoria] = useState(null);
@@ -107,12 +108,34 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
     }
   };
 
-  const abrirBoleta = async (row) => {
+  const abrirRecibo = async (row) => {
     try {
-      const detalle = await crud.obtener(row[cfg.pk]);
-      setBoleta({ ...row, ...detalle, TURNO: row.TURNO || detalle.TURNO });
-    } catch {
-      setBoleta(row);
+      setRecibo(await prepararRecibo(cfg.recibo, row));
+    } catch (err) {
+      setToast({ mensaje: err.message, tipo: "error" });
+    }
+  };
+
+  const enviarRecibo = async (row) => {
+    // La pestaña se abre en el mismo clic: si se abre después de cargar datos, el navegador la bloquea.
+    const ventana = window.open("", "_blank");
+    if (ventana) ventana.opener = null;
+    try {
+      const datos = await prepararRecibo(cfg.recibo, row);
+      const enlace = enlaceWhatsappRecibo(datos);
+      if (!enlace) {
+        ventana?.close();
+        setRecibo(datos);
+        setToast({ mensaje: `${datos.nombre || "El cliente"} no tiene celular registrado. Escríbelo en el recibo para enviarlo.`, tipo: "error" });
+        return;
+      }
+      if (ventana) ventana.location.href = enlace;
+      else window.open(enlace, "_blank", "noopener,noreferrer");
+      await descargarRecibo(datos);
+      setToast({ mensaje: `Recibo ${datos.numero} descargado. Adjúntalo en el chat de WhatsApp.`, tipo: "success" });
+    } catch (err) {
+      ventana?.close();
+      setToast({ mensaje: err.message, tipo: "error" });
     }
   };
 
@@ -372,7 +395,8 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
           loading={crud.loading}
           onOrden={crud.toggleOrden}
           onVer={cfg.detalleAuditoria ? abrirDetalleAuditoria : cfg.permitirVer === false ? undefined : abrirVer}
-          onVerBoleta={cfg.boleta ? abrirBoleta : undefined}
+          onVerRecibo={cfg.recibo ? abrirRecibo : undefined}
+          onEnviarRecibo={cfg.recibo ? enviarRecibo : undefined}
           onAnular={cfg.controlRecibos && puede("ANULAR_OPERACIONES") ? ((row) => setConfirm({
             tipo: "anular",
             id: row[cfg.pk],
@@ -445,7 +469,7 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
       {detalleAuditoria && (
         <DetalleAuditoriaModal registro={detalleAuditoria} onClose={() => setDetalleAuditoria(null)} />
       )}
-      {boleta && <BoletaVenta venta={boleta} onClose={() => setBoleta(null)} />}
+      {recibo && <ReciboModal key={`${recibo.tipo}-${recibo.numero}`} recibo={recibo} onClose={() => setRecibo(null)} />}
       {toast && <Toast mensaje={toast.mensaje} tipo={toast.tipo} onClose={() => setToast(null)} />}
     </div>
   );

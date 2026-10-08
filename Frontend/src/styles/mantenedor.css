@@ -359,82 +359,73 @@ button.page-breadcrumb-link:hover {
   color: #9b2148;
 }
 
-.boleta-panel {
-  width: min(440px, 100%);
-}
-
-.boleta-hoja {
-  background: #fff;
-  border: 1px dashed #d5d0d8;
-  border-radius: 8px;
-  padding: 1.1rem 1.15rem 0.9rem;
-}
-
-.boleta-academia {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #9b2148;
-}
-
-.boleta-hoja h3 {
-  margin: 0.15rem 0 0.7rem;
-  font-size: 1.15rem;
-}
-
-.boleta-meta {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--color-muted);
-}
-
-.boleta-hoja dl {
-  margin: 0.85rem 0 0;
-}
-
-.boleta-hoja dl div {
-  display: grid;
-  grid-template-columns: 7.2rem 1fr;
-  gap: 0.35rem;
-  padding: 0.35rem 0;
-  border-top: 1px solid #eee7ec;
-  font-size: 0.88rem;
-}
-
-.boleta-hoja dt {
-  color: var(--color-muted);
-}
-
-.boleta-hoja dd {
-  margin: 0;
-}
-
-.boleta-items {
-  width: 100%;
-  margin-top: 0.9rem;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-
-.boleta-items th,
-.boleta-items td {
-  padding: 0.4rem 0;
-  border-top: 1px solid #eee7ec;
-  text-align: left;
-}
-
-.boleta-items th:last-child,
-.boleta-items td:last-child {
-  text-align: right;
+.recibo-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   white-space: nowrap;
 }
 
-.boleta-items small {
+.btn-recibo-enviar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #25d366;
+  border-radius: 999px;
+  background: #eafff3;
+  color: #128c7e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+}
+
+.btn-recibo-enviar:hover {
+  background: #25d366;
+  color: #fff;
+}
+
+.recibo-panel {
+  width: min(600px, 100%);
+}
+
+.recibo-vista {
+  position: relative;
+  min-height: 12rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.recibo-vista canvas {
   display: block;
+  width: 100%;
+  height: auto;
+}
+
+.recibo-cargando {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
   color: var(--color-muted);
-  font-size: 0.75rem;
+}
+
+.recibo-telefono {
+  margin-top: 1rem;
+}
+
+.btn-whatsapp {
+  background: #25d366;
+  border-color: #25d366;
+}
+
+.btn-whatsapp:hover:not(:disabled) {
+  background: #128c7e;
+  border-color: #128c7e;
 }
 
 .lineas-venta {
@@ -467,33 +458,6 @@ button.page-breadcrumb-link:hover {
 .lineas-venta-fila select,
 .lineas-venta-fila input {
   width: 100%;
-}
-
-.boleta-total {
-  margin: 0.9rem 0 0.35rem;
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
-.boleta-nota {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--color-muted);
-}
-
-.boleta-sello {
-  margin: 0.35rem 0 0;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.boleta-sello.anulado,
-.boleta-sello.eliminado {
-  color: #b42318;
-}
-
-.boleta-sellos {
-  margin-top: 0.75rem;
 }
 
 .badge-estado {
