@@ -381,7 +381,7 @@ export const pagoConfig = {
       remoto: "mensualidades",
       filtraPor: "IDALUMNA",
       obligatorio: true,
-      ayuda: "Elige el periodo exacto. El pago no se pasa solo a otro periodo ni puede superar su saldo.",
+      ayuda: "Elige el periodo exacto, o NUEVA MENSUALIDAD para crear el periodo siguiente y pagarlo. El pago no puede superar el saldo.",
     },
     { campo: "FECHA", etiqueta: "Fecha", control: "date", obligatorio: true, defaultHoy: true },
     { campo: "MONTO", etiqueta: "Monto (S/.)", control: "number", obligatorio: true },

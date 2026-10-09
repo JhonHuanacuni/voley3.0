@@ -23,20 +23,103 @@ DROP PROCEDURE IF EXISTS usp_pago_insertar;
 DROP PROCEDURE IF EXISTS usp_pago_actualizar;
 DROP PROCEDURE IF EXISTS usp_pago_eliminar;
 DROP PROCEDURE IF EXISTS usp_mensualidad_por_alumna;
+DROP PROCEDURE IF EXISTS usp_mensualidad_siguiente;
+DROP PROCEDURE IF EXISTS usp_mensualidad_nueva_crear;
 
 DELIMITER $$
 
 -- Periodos que se pueden pagar de una alumna (select de mensualidad en Pagos).
+-- La primera fila es la opción NUEVA MENSUALIDAD (IDMENSUALIDAD = 'NUEVA'): el periodo que seguiría al último.
 CREATE PROCEDURE usp_mensualidad_por_alumna(IN p_IdAlumna VARCHAR(50))
 BEGIN
+    DECLARE v_base VARCHAR(50);
+    DECLARE v_promo VARCHAR(50);
+    DECLARE v_ini CHAR(8);
+    DECLARE v_fin CHAR(8);
+    DECLARE v_monto DECIMAL(10,2);
+    DECLARE v_regular DECIMAL(10,2);
+    DECLARE v_error VARCHAR(200);
+    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, v_regular, v_promo, v_error);
+    SELECT 'NUEVA' AS IDMENSUALIDAD, a.IDALUMNA, v_ini AS FECHAINICIO, v_fin AS FECHAFIN,
+           'Nueva' AS ESTADO, v_monto AS MONTO, v_monto AS SALDO, 0 AS ORDEN, CAST(NULL AS DATE) AS INICIO
+      FROM ALUMNA a
+     WHERE a.IDALUMNA = p_IdAlumna AND v_error IS NULL
+    UNION ALL
     SELECT m.IDMENSUALIDAD, m.IDALUMNA, m.FECHAINICIO, m.FECHAFIN, m.ESTADO, m.MONTO,
-           GREATEST(m.MONTO - IFNULL(pg.PAGADO, 0), 0) AS SALDO
+           GREATEST(m.MONTO - IFNULL(pg.PAGADO, 0), 0), 1, STR_TO_DATE(m.FECHAINICIO, '%d%m%Y')
     FROM MENSUALIDAD m
     LEFT JOIN (SELECT IDMENSUALIDAD, SUM(MONTO) AS PAGADO FROM PAGO GROUP BY IDMENSUALIDAD) pg
            ON pg.IDMENSUALIDAD = m.IDMENSUALIDAD
     WHERE m.IDALUMNA = p_IdAlumna
       AND m.ESTADO <> 'Inactivo'
-    ORDER BY STR_TO_DATE(m.FECHAINICIO, '%d%m%Y') DESC;
+    ORDER BY ORDEN, INICIO DESC;
+END$$
+
+-- Periodo que seguiría al último de la alumna. Las fechas siguen al último periodo aunque sea inactivo;
+-- el monto y la promoción salen del último periodo activo, igual que al renovar.
+CREATE PROCEDURE usp_mensualidad_siguiente(
+    IN p_IdAlumna VARCHAR(50),
+    OUT p_Base VARCHAR(50), OUT p_Inicio CHAR(8), OUT p_Fin CHAR(8),
+    OUT p_Monto DECIMAL(10,2), OUT p_Regular DECIMAL(10,2), OUT p_Promo VARCHAR(50), OUT p_Error VARCHAR(200)
+)
+proc: BEGIN
+    DECLARE v_ultimo DATE;
+    DECLARE v_ini DATE;
+    SET p_Base = NULL; SET p_Inicio = NULL; SET p_Fin = NULL;
+    SET p_Monto = NULL; SET p_Regular = NULL; SET p_Promo = NULL; SET p_Error = NULL;
+    IF p_IdAlumna IS NULL OR NOT EXISTS (SELECT 1 FROM ALUMNA WHERE IDALUMNA = p_IdAlumna) THEN
+        SET p_Error = 'Selecciona una alumna.'; LEAVE proc;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna AND ESTADO <> 'Inactivo') THEN
+        SET p_Error = 'La alumna no tiene mensualidades. Registra su matrícula en Mensualidades.'; LEAVE proc;
+    END IF;
+    SELECT IDMENSUALIDAD, MONTO, MONTOREGULAR, IDPROMOCION INTO p_Base, p_Monto, p_Regular, p_Promo
+      FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna AND ESTADO <> 'Inactivo'
+     ORDER BY STR_TO_DATE(FECHAFIN, '%d%m%Y') DESC, IDMENSUALIDAD DESC LIMIT 1;
+    SELECT MAX(STR_TO_DATE(FECHAFIN, '%d%m%Y')) INTO v_ultimo FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna;
+    SET v_ini = DATE_ADD(v_ultimo, INTERVAL 1 DAY);
+    SET p_Inicio = DATE_FORMAT(v_ini, '%d%m%Y');
+    SET p_Fin = DATE_FORMAT(DATE_SUB(DATE_ADD(v_ini, INTERVAL 1 MONTH), INTERVAL 1 DAY), '%d%m%Y');
+    IF p_Promo IS NOT NULL THEN
+        SET p_Regular = IFNULL(p_Regular, (SELECT MONTOREGULAR FROM PROMOCION WHERE IDPROMOCION = p_Promo));
+        SET p_Monto = fn_monto_promocion(p_IdAlumna, p_Promo, NULL);
+    END IF;
+    IF p_Regular IS NOT NULL AND p_Regular < p_Monto THEN
+        SET p_Regular = p_Monto;
+    END IF;
+END$$
+
+-- Crea el periodo siguiente cuando se paga con NUEVA MENSUALIDAD. Valida el monto del pago
+-- antes de insertar, para no dejar un periodo creado si el pago no procede.
+CREATE PROCEDURE usp_mensualidad_nueva_crear(
+    IN p_IdAlumna VARCHAR(50), IN p_MontoPago DECIMAL(10,2), OUT p_Id VARCHAR(50), OUT p_Error VARCHAR(200)
+)
+proc: BEGIN
+    DECLARE v_base VARCHAR(50);
+    DECLARE v_promo VARCHAR(50);
+    DECLARE v_ini CHAR(8);
+    DECLARE v_fin CHAR(8);
+    DECLARE v_monto DECIMAL(10,2);
+    DECLARE v_regular DECIMAL(10,2);
+    SET p_Id = NULL;
+    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, v_regular, v_promo, p_Error);
+    IF p_Error IS NOT NULL THEN
+        LEAVE proc;
+    END IF;
+    IF p_MontoPago IS NULL OR p_MontoPago <= 0 THEN
+        SET p_Error = 'Ingresa un monto mayor a cero.'; LEAVE proc;
+    END IF;
+    IF p_MontoPago > IFNULL(v_monto, 0) THEN
+        SET p_Error = CONCAT('El pago supera el monto de la nueva mensualidad (S/ ', FORMAT(IFNULL(v_monto, 0), 2), ').');
+        LEAVE proc;
+    END IF;
+    SELECT CONCAT('MEN', LPAD(IFNULL(MAX(CAST(SUBSTRING(IDMENSUALIDAD, 4) AS UNSIGNED)), 0) + 1, 6, '0'))
+      INTO p_Id FROM MENSUALIDAD;
+    INSERT INTO MENSUALIDAD (IDMENSUALIDAD, IDALUMNA, FECHAINICIO, FECHAFIN, MONTO, MONTOREGULAR, ESTADO,
+                             IDRENOVADA, IDPROMOCION, FECHACREACION)
+    VALUES (p_Id, p_IdAlumna, v_ini, v_fin, v_monto, v_regular, 'Deuda',
+            v_base, v_promo, DATE_FORMAT(NOW(), '%d%m%Y'));
+    CALL usp_mensualidad_recalcular(p_Id);
 END$$
 
 -- El periodo vigente de la alumna es el último que no está marcado como inactivo.
@@ -503,6 +586,7 @@ proc: BEGIN
     END IF;
 END$$
 
+-- p_IdMensualidad = 'NUEVA' crea primero el periodo siguiente al último de la alumna y le aplica el pago.
 CREATE PROCEDURE usp_pago_insertar(
     IN p_IdAlumna VARCHAR(50), IN p_IdMensualidad VARCHAR(50), IN p_Fecha CHAR(8),
     IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30),
@@ -511,23 +595,34 @@ CREATE PROCEDURE usp_pago_insertar(
 proc: BEGIN
     DECLARE v_id VARCHAR(50);
     DECLARE v_alu VARCHAR(50);
+    DECLARE v_men VARCHAR(50);
     DECLARE v_saldo DECIMAL(10,2);
     DECLARE v_error VARCHAR(200);
-    CALL usp_pago_validar(NULL, p_IdAlumna, p_IdMensualidad, p_Monto, v_alu, v_saldo, v_error);
+    DECLARE v_aviso VARCHAR(100) DEFAULT '';
+    SET v_men = p_IdMensualidad;
+    IF v_men = 'NUEVA' THEN
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_Monto, v_men, v_error);
+        IF v_error IS NOT NULL THEN
+            SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
+        END IF;
+        SELECT CONCAT('Nueva mensualidad del ', fn_fecha_vista(FECHAINICIO), ' al ', fn_fecha_vista(FECHAFIN), ' creada. ')
+          INTO v_aviso FROM MENSUALIDAD WHERE IDMENSUALIDAD = v_men;
+    END IF;
+    CALL usp_pago_validar(NULL, p_IdAlumna, v_men, p_Monto, v_alu, v_saldo, v_error);
     IF v_error IS NOT NULL THEN
         SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
     END IF;
     SELECT CONCAT('PAG', LPAD(IFNULL(MAX(CAST(SUBSTRING(IDPAGO, 4) AS UNSIGNED)), 0) + 1, 6, '0'))
       INTO v_id FROM PAGO;
     INSERT INTO PAGO (IDPAGO, IDMENSUALIDAD, IDALUMNA, FECHA, MONTO, MEDIO, FECHACREACION)
-    VALUES (v_id, p_IdMensualidad, v_alu, IFNULL(p_Fecha, DATE_FORMAT(NOW(), '%d%m%Y')),
+    VALUES (v_id, v_men, v_alu, IFNULL(p_Fecha, DATE_FORMAT(NOW(), '%d%m%Y')),
             p_Monto, IFNULL(NULLIF(p_Medio, ''), 'Efectivo'), DATE_FORMAT(NOW(), '%d%m%Y'));
-    CALL usp_mensualidad_recalcular(p_IdMensualidad);
+    CALL usp_mensualidad_recalcular(v_men);
     SET p_Resultado = 1;
     IF v_saldo - p_Monto > 0 THEN
-        SET p_Mensaje = CONCAT('Pago parcial registrado. Saldo pendiente del periodo: S/ ', FORMAT(v_saldo - p_Monto, 2), '.');
+        SET p_Mensaje = CONCAT(v_aviso, 'Pago parcial registrado. Saldo pendiente del periodo: S/ ', FORMAT(v_saldo - p_Monto, 2), '.');
     ELSE
-        SET p_Mensaje = 'Pago registrado. El periodo quedó pagado.';
+        SET p_Mensaje = CONCAT(v_aviso, 'Pago registrado. El periodo quedó pagado.');
     END IF;
 END$$
 
@@ -539,23 +634,34 @@ CREATE PROCEDURE usp_pago_actualizar(
 proc: BEGIN
     DECLARE v_men_ant VARCHAR(50);
     DECLARE v_alu VARCHAR(50);
+    DECLARE v_men VARCHAR(50);
     DECLARE v_saldo DECIMAL(10,2);
     DECLARE v_error VARCHAR(200);
+    DECLARE v_aviso VARCHAR(100) DEFAULT '';
     IF NOT EXISTS (SELECT 1 FROM PAGO WHERE IDPAGO = p_Id) THEN
         SET p_Resultado = 0; SET p_Mensaje = 'El pago no existe.'; LEAVE proc;
     END IF;
     SELECT IDMENSUALIDAD INTO v_men_ant FROM PAGO WHERE IDPAGO = p_Id;
-    CALL usp_pago_validar(p_Id, p_IdAlumna, p_IdMensualidad, p_Monto, v_alu, v_saldo, v_error);
+    SET v_men = p_IdMensualidad;
+    IF v_men = 'NUEVA' THEN
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_Monto, v_men, v_error);
+        IF v_error IS NOT NULL THEN
+            SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
+        END IF;
+        SELECT CONCAT('Nueva mensualidad del ', fn_fecha_vista(FECHAINICIO), ' al ', fn_fecha_vista(FECHAFIN), ' creada. ')
+          INTO v_aviso FROM MENSUALIDAD WHERE IDMENSUALIDAD = v_men;
+    END IF;
+    CALL usp_pago_validar(p_Id, p_IdAlumna, v_men, p_Monto, v_alu, v_saldo, v_error);
     IF v_error IS NOT NULL THEN
         SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
     END IF;
     UPDATE PAGO
-       SET IDALUMNA = v_alu, IDMENSUALIDAD = p_IdMensualidad,
+       SET IDALUMNA = v_alu, IDMENSUALIDAD = v_men,
            FECHA = p_Fecha, MONTO = p_Monto, MEDIO = IFNULL(NULLIF(p_Medio, ''), 'Efectivo')
      WHERE IDPAGO = p_Id;
-    IF v_men_ant IS NOT NULL AND v_men_ant <> p_IdMensualidad THEN CALL usp_mensualidad_recalcular(v_men_ant); END IF;
-    CALL usp_mensualidad_recalcular(p_IdMensualidad);
-    SET p_Resultado = 1; SET p_Mensaje = 'Pago actualizado.';
+    IF v_men_ant IS NOT NULL AND v_men_ant <> v_men THEN CALL usp_mensualidad_recalcular(v_men_ant); END IF;
+    CALL usp_mensualidad_recalcular(v_men);
+    SET p_Resultado = 1; SET p_Mensaje = CONCAT(v_aviso, 'Pago actualizado.');
 END$$
 
 CREATE PROCEDURE usp_pago_eliminar(IN p_Id VARCHAR(50), OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200))

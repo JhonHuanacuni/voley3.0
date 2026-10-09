@@ -18,8 +18,10 @@ export async function mensualidadesDeAlumna(idalumna) {
   if (!res.ok) throw new Error(data.error || "No se pudieron cargar las mensualidades");
   return (data.data || []).map((item) => ({
     ...item,
-    label: `${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · ${item.estado}${
-      item.saldo > 0 ? ` · saldo S/ ${Number(item.saldo).toFixed(2)}` : ""
-    }`,
+    label: item.value === "NUEVA"
+      ? `NUEVA MENSUALIDAD · ${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · S/ ${Number(item.monto).toFixed(2)}`
+      : `${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · ${item.estado}${
+        item.saldo > 0 ? ` · saldo S/ ${Number(item.saldo).toFixed(2)}` : ""
+      }`,
   }));
 }
