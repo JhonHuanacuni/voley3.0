@@ -382,11 +382,26 @@ export const pagoConfig = {
       filtraPor: "IDALUMNA",
       obligatorio: true,
       ayuda: "Elige el periodo exacto, o NUEVA MENSUALIDAD para crear el periodo siguiente y pagarlo. El pago no puede superar el saldo.",
+      rellena: (op) => {
+        if (op.value === "NUEVA") return { MONTOMENSUALIDAD: String(op.monto), MONTO: String(op.monto) };
+        return op.saldo > 0 ? { MONTO: String(op.saldo) } : {};
+      },
     },
     { campo: "FECHA", etiqueta: "Fecha", control: "date", obligatorio: true, defaultHoy: true },
+    {
+      campo: "MONTOMENSUALIDAD",
+      etiqueta: "Monto de la nueva mensualidad (S/.)",
+      control: "number",
+      obligatorio: true,
+      visibleSi: { campo: "IDMENSUALIDAD", valor: "NUEVA" },
+      ayuda: "Se sugiere la tarifa de la alumna. Puedes cambiarlo.",
+    },
     { campo: "MONTO", etiqueta: "Monto (S/.)", control: "number", obligatorio: true },
     { campo: "MEDIO", etiqueta: "Medio de pago", control: "select", opciones: MEDIOS, defaultValue: "Efectivo" },
   ],
+  onFieldChange: (campo, valor, setValues) => {
+    if (campo === "MONTOMENSUALIDAD") setValues((prev) => ({ ...prev, MONTO: valor }));
+  },
 };
 
 export const promocionConfig = {

@@ -273,12 +273,13 @@ export default function FormPage({
         disabled={soloLectura || (campo.soloCrear && modo === "editar") || campo.bloqueado}
         catalogo={catalogos[campo.catalogo]}
         valores={values}
-        onChange={(val) => {
+        onChange={(val, opcion) => {
           setValues((prev) => {
             const next = { ...prev, [campo.campo]: val };
             (campo.limpia || []).forEach((clave) => {
               next[clave] = "";
             });
+            if (opcion && campo.rellena) Object.assign(next, campo.rellena(opcion));
             return next;
           });
           onFieldChange?.(campo.campo, val, setValues);

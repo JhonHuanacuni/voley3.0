@@ -24,7 +24,11 @@ export default function MensualidadAlumnaSelect({ idalumna, value, disabled, onC
       : opciones.length ? "SELECCIONAR PERIODO" : "LA ALUMNA NO TIENE PERIODOS";
 
   return (
-    <select value={value} disabled={disabled || !idalumna} onChange={(e) => onChange(e.target.value)}>
+    <select
+      value={value}
+      disabled={disabled || !idalumna}
+      onChange={(e) => onChange(e.target.value, opciones.find((op) => String(op.value) === e.target.value))}
+    >
       <option value="">{placeholder}</option>
       {opciones.map((op) => (
         <option key={op.value} value={op.value}>

@@ -33,13 +33,11 @@ DELIMITER $$
 CREATE PROCEDURE usp_mensualidad_por_alumna(IN p_IdAlumna VARCHAR(50))
 BEGIN
     DECLARE v_base VARCHAR(50);
-    DECLARE v_promo VARCHAR(50);
     DECLARE v_ini CHAR(8);
     DECLARE v_fin CHAR(8);
     DECLARE v_monto DECIMAL(10,2);
-    DECLARE v_regular DECIMAL(10,2);
     DECLARE v_error VARCHAR(200);
-    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, v_regular, v_promo, v_error);
+    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, v_error);
     SELECT 'NUEVA' AS IDMENSUALIDAD, a.IDALUMNA, v_ini AS FECHAINICIO, v_fin AS FECHAFIN,
            'Nueva' AS ESTADO, v_monto AS MONTO, v_monto AS SALDO, 0 AS ORDEN, CAST(NULL AS DATE) AS INICIO
       FROM ALUMNA a
@@ -55,56 +53,59 @@ BEGIN
     ORDER BY ORDEN, INICIO DESC;
 END$$
 
--- Periodo que seguiría al último de la alumna. Las fechas siguen al último periodo aunque sea inactivo;
--- el monto y la promoción salen del último periodo activo, igual que al renovar.
+-- Periodo que seguiría al último de la alumna. Las fechas siguen al último periodo aunque sea inactivo.
+-- El monto sugerido es la tarifa de la ficha de la alumna (sin la promoción del periodo anterior);
+-- si no tiene tarifa, la tarifa regular o el monto de su último periodo activo.
 CREATE PROCEDURE usp_mensualidad_siguiente(
     IN p_IdAlumna VARCHAR(50),
     OUT p_Base VARCHAR(50), OUT p_Inicio CHAR(8), OUT p_Fin CHAR(8),
-    OUT p_Monto DECIMAL(10,2), OUT p_Regular DECIMAL(10,2), OUT p_Promo VARCHAR(50), OUT p_Error VARCHAR(200)
+    OUT p_Monto DECIMAL(10,2), OUT p_Error VARCHAR(200)
 )
 proc: BEGIN
     DECLARE v_ultimo DATE;
     DECLARE v_ini DATE;
-    SET p_Base = NULL; SET p_Inicio = NULL; SET p_Fin = NULL;
-    SET p_Monto = NULL; SET p_Regular = NULL; SET p_Promo = NULL; SET p_Error = NULL;
+    DECLARE v_tarifa DECIMAL(10,2);
+    DECLARE v_regular DECIMAL(10,2);
+    SET p_Base = NULL; SET p_Inicio = NULL; SET p_Fin = NULL; SET p_Monto = NULL; SET p_Error = NULL;
     IF p_IdAlumna IS NULL OR NOT EXISTS (SELECT 1 FROM ALUMNA WHERE IDALUMNA = p_IdAlumna) THEN
         SET p_Error = 'Selecciona una alumna.'; LEAVE proc;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna AND ESTADO <> 'Inactivo') THEN
         SET p_Error = 'La alumna no tiene mensualidades. Registra su matrícula en Mensualidades.'; LEAVE proc;
     END IF;
-    SELECT IDMENSUALIDAD, MONTO, MONTOREGULAR, IDPROMOCION INTO p_Base, p_Monto, p_Regular, p_Promo
+    SELECT IDMENSUALIDAD, MONTO, MONTOREGULAR INTO p_Base, p_Monto, v_regular
       FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna AND ESTADO <> 'Inactivo'
      ORDER BY STR_TO_DATE(FECHAFIN, '%d%m%Y') DESC, IDMENSUALIDAD DESC LIMIT 1;
+    SELECT MENSUALIDAD INTO v_tarifa FROM ALUMNA WHERE IDALUMNA = p_IdAlumna;
+    SET p_Monto = COALESCE(NULLIF(v_tarifa, 0), NULLIF(v_regular, 0), p_Monto);
     SELECT MAX(STR_TO_DATE(FECHAFIN, '%d%m%Y')) INTO v_ultimo FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna;
     SET v_ini = DATE_ADD(v_ultimo, INTERVAL 1 DAY);
     SET p_Inicio = DATE_FORMAT(v_ini, '%d%m%Y');
     SET p_Fin = DATE_FORMAT(DATE_SUB(DATE_ADD(v_ini, INTERVAL 1 MONTH), INTERVAL 1 DAY), '%d%m%Y');
-    IF p_Promo IS NOT NULL THEN
-        SET p_Regular = IFNULL(p_Regular, (SELECT MONTOREGULAR FROM PROMOCION WHERE IDPROMOCION = p_Promo));
-        SET p_Monto = fn_monto_promocion(p_IdAlumna, p_Promo, NULL);
-    END IF;
-    IF p_Regular IS NOT NULL AND p_Regular < p_Monto THEN
-        SET p_Regular = p_Monto;
-    END IF;
 END$$
 
--- Crea el periodo siguiente cuando se paga con NUEVA MENSUALIDAD. Valida el monto del pago
--- antes de insertar, para no dejar un periodo creado si el pago no procede.
+-- Crea el periodo siguiente cuando se paga con NUEVA MENSUALIDAD. p_MontoMensualidad es el monto que
+-- se escribió en el formulario (vacío = el sugerido). Valida el pago antes de insertar, para no dejar
+-- un periodo creado si el pago no procede.
 CREATE PROCEDURE usp_mensualidad_nueva_crear(
-    IN p_IdAlumna VARCHAR(50), IN p_MontoPago DECIMAL(10,2), OUT p_Id VARCHAR(50), OUT p_Error VARCHAR(200)
+    IN p_IdAlumna VARCHAR(50), IN p_MontoMensualidad DECIMAL(10,2), IN p_MontoPago DECIMAL(10,2),
+    OUT p_Id VARCHAR(50), OUT p_Error VARCHAR(200)
 )
 proc: BEGIN
     DECLARE v_base VARCHAR(50);
-    DECLARE v_promo VARCHAR(50);
     DECLARE v_ini CHAR(8);
     DECLARE v_fin CHAR(8);
     DECLARE v_monto DECIMAL(10,2);
-    DECLARE v_regular DECIMAL(10,2);
     SET p_Id = NULL;
-    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, v_regular, v_promo, p_Error);
+    CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, p_Error);
     IF p_Error IS NOT NULL THEN
         LEAVE proc;
+    END IF;
+    IF p_MontoMensualidad IS NOT NULL THEN
+        IF p_MontoMensualidad <= 0 THEN
+            SET p_Error = 'Ingresa un monto de mensualidad mayor a cero.'; LEAVE proc;
+        END IF;
+        SET v_monto = p_MontoMensualidad;
     END IF;
     IF p_MontoPago IS NULL OR p_MontoPago <= 0 THEN
         SET p_Error = 'Ingresa un monto mayor a cero.'; LEAVE proc;
@@ -117,8 +118,8 @@ proc: BEGIN
       INTO p_Id FROM MENSUALIDAD;
     INSERT INTO MENSUALIDAD (IDMENSUALIDAD, IDALUMNA, FECHAINICIO, FECHAFIN, MONTO, MONTOREGULAR, ESTADO,
                              IDRENOVADA, IDPROMOCION, FECHACREACION)
-    VALUES (p_Id, p_IdAlumna, v_ini, v_fin, v_monto, v_regular, 'Deuda',
-            v_base, v_promo, DATE_FORMAT(NOW(), '%d%m%Y'));
+    VALUES (p_Id, p_IdAlumna, v_ini, v_fin, v_monto, NULL, 'Deuda',
+            v_base, NULL, DATE_FORMAT(NOW(), '%d%m%Y'));
     CALL usp_mensualidad_recalcular(p_Id);
 END$$
 
@@ -586,10 +587,11 @@ proc: BEGIN
     END IF;
 END$$
 
--- p_IdMensualidad = 'NUEVA' crea primero el periodo siguiente al último de la alumna y le aplica el pago.
+-- p_IdMensualidad = 'NUEVA' crea primero el periodo siguiente al último de la alumna, por p_MontoMensualidad,
+-- y le aplica el pago.
 CREATE PROCEDURE usp_pago_insertar(
     IN p_IdAlumna VARCHAR(50), IN p_IdMensualidad VARCHAR(50), IN p_Fecha CHAR(8),
-    IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30),
+    IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30), IN p_MontoMensualidad DECIMAL(10,2),
     OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
 )
 proc: BEGIN
@@ -601,7 +603,7 @@ proc: BEGIN
     DECLARE v_aviso VARCHAR(100) DEFAULT '';
     SET v_men = p_IdMensualidad;
     IF v_men = 'NUEVA' THEN
-        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_Monto, v_men, v_error);
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_MontoMensualidad, p_Monto, v_men, v_error);
         IF v_error IS NOT NULL THEN
             SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
         END IF;
@@ -628,7 +630,7 @@ END$$
 
 CREATE PROCEDURE usp_pago_actualizar(
     IN p_Id VARCHAR(50), IN p_IdAlumna VARCHAR(50), IN p_IdMensualidad VARCHAR(50), IN p_Fecha CHAR(8),
-    IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30),
+    IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30), IN p_MontoMensualidad DECIMAL(10,2),
     OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
 )
 proc: BEGIN
@@ -644,7 +646,7 @@ proc: BEGIN
     SELECT IDMENSUALIDAD INTO v_men_ant FROM PAGO WHERE IDPAGO = p_Id;
     SET v_men = p_IdMensualidad;
     IF v_men = 'NUEVA' THEN
-        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_Monto, v_men, v_error);
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_MontoMensualidad, p_Monto, v_men, v_error);
         IF v_error IS NOT NULL THEN
             SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
         END IF;
