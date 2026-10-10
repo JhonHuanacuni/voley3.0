@@ -6,7 +6,7 @@ import { dbToTexto, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fec
 import { descargarReporteVentas } from "../../utils/reporteVentas";
 import { alCambiarFunciones, puede } from "../../utils/sesion";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
-import { descargarRecibo, enlaceWhatsappRecibo, prepararRecibo } from "../../utils/recibo";
+import { enviarReciboPorWhatsapp, prepararRecibo } from "../../utils/recibo";
 import TrazabilidadPanel from "../../components/mantenedor/TrazabilidadPanel";
 import { useCrud } from "../../hooks/useCrud";
 import PageHeader from "../../components/mantenedor/PageHeader";
@@ -117,24 +117,15 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
   };
 
   const enviarRecibo = async (row) => {
-    // La pestaña se abre en el mismo clic: si se abre después de cargar datos, el navegador la bloquea.
-    const ventana = window.open("", "_blank");
-    if (ventana) ventana.opener = null;
     try {
-      const datos = await prepararRecibo(cfg.recibo, row);
-      const enlace = enlaceWhatsappRecibo(datos);
-      if (!enlace) {
-        ventana?.close();
+      const { datos, enviado } = await enviarReciboPorWhatsapp(() => prepararRecibo(cfg.recibo, row));
+      if (!enviado) {
         setRecibo(datos);
         setToast({ mensaje: `${datos.nombre || "El cliente"} no tiene celular registrado. Escríbelo en el recibo para enviarlo.`, tipo: "error" });
         return;
       }
-      if (ventana) ventana.location.href = enlace;
-      else window.open(enlace, "_blank", "noopener,noreferrer");
-      await descargarRecibo(datos);
       setToast({ mensaje: `Recibo ${datos.numero} descargado. Adjúntalo en el chat de WhatsApp.`, tipo: "success" });
     } catch (err) {
-      ventana?.close();
       setToast({ mensaje: err.message, tipo: "error" });
     }
   };
@@ -246,7 +237,7 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
           id: "abonos",
           icono: faHandHoldingDollar,
           titulo: "Abonos y saldo",
-          onClick: (row) => setAbonosVenta(row[cfg.pk]),
+          onClick: (row) => setAbonosVenta(row),
         };
       }
       if (accion === "estadoCuenta") {
@@ -490,7 +481,8 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
       )}
       {abonosVenta && (
         <AbonosVentaModal
-          idVenta={abonosVenta}
+          idVenta={abonosVenta[cfg.pk]}
+          filaVenta={abonosVenta}
           onClose={() => setAbonosVenta(null)}
           onCambio={() => crud.listar()}
         />

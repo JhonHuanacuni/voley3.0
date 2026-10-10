@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faBan, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faBan, faCommentDots, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
 import { dbToView, hoyInput } from "../../utils/fecha";
+import { enviarReciboPorWhatsapp, prepararRecibo, reciboDeAbono } from "../../utils/recibo";
 import { puede } from "../../utils/sesion";
+import ReciboModal from "../../components/mantenedor/ReciboModal";
 import TablaGestion from "./TablaGestion";
 import { dinero } from "./tablaGestionUtils";
 import "../../styles/mantenedor.css";
@@ -16,12 +18,13 @@ const cabeceras = () => ({
   "X-IdUsuario": localStorage.getItem("idusuario") || "",
 });
 
-export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
+export default function AbonosVentaModal({ idVenta, filaVenta, onClose, onCambio }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ FECHA: hoyInput(), MONTO: "", MEDIO: "Efectivo", OBSERVACION: "" });
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState(null);
+  const [recibo, setRecibo] = useState(null);
 
   const cargar = useCallback(async () => {
     try {
@@ -40,10 +43,14 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
   }, [cargar]);
 
   useEffect(() => {
-    const alTeclear = (e) => e.key === "Escape" && onClose();
+    const alTeclear = (e) => {
+      if (e.key !== "Escape") return;
+      if (recibo) setRecibo(null);
+      else onClose();
+    };
     window.addEventListener("keydown", alTeclear);
     return () => window.removeEventListener("keydown", alTeclear);
-  }, [onClose]);
+  }, [onClose, recibo]);
 
   const venta = data?.venta || {};
   const abonos = data?.abonos || [];
@@ -97,6 +104,31 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
     }
   };
 
+  const cargarRecibo = async (indice) =>
+    reciboDeAbono(await prepararRecibo("venta", { ...filaVenta, IDVENTA: idVenta }), abonos, indice);
+
+  const verRecibo = async (indice) => {
+    try {
+      setRecibo(await cargarRecibo(indice));
+    } catch (err) {
+      setAviso({ tipo: "error", texto: err.message });
+    }
+  };
+
+  const enviarRecibo = async (indice) => {
+    try {
+      const { datos, enviado } = await enviarReciboPorWhatsapp(() => cargarRecibo(indice));
+      if (!enviado) {
+        setRecibo(datos);
+        setAviso({ tipo: "error", texto: `${datos.nombre || "El cliente"} no tiene celular registrado. Escríbelo en el recibo para enviarlo.` });
+        return;
+      }
+      setAviso({ tipo: "ok", texto: `Recibo de ${datos.abono.IDABONO} descargado. Adjúntalo en el chat de WhatsApp.` });
+    } catch (err) {
+      setAviso({ tipo: "error", texto: err.message });
+    }
+  };
+
   const columnas = [
     { key: "FECHA", label: "Fecha", formato: "fecha" },
     { key: "IDABONO", label: "Código", formato: "texto" },
@@ -112,18 +144,36 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
         ? `${f.IDUSUARIO}${f.FECHAREGISTRO ? ` · ${dbToView(String(f.FECHAREGISTRO))}` : ""}${f.HORAREGISTRO ? ` ${f.HORAREGISTRO}` : ""}`
         : "—"),
     },
-    ...(puedeAnular
-      ? [{
-          key: "ACCION",
-          label: "",
-          formato: "texto",
-          render: (f) => (f.ORIGEN === "Abono" ? (
-            <button type="button" className="btn-icon" title="Anular abono" onClick={() => anular(f)}>
-              <FontAwesomeIcon icon={faBan} />
+    {
+      key: "ACCION",
+      label: "Acciones",
+      formato: "texto",
+      render: (f) => {
+        const indice = abonos.indexOf(f);
+        return (
+          <div className="recibo-acciones">
+            <button type="button" className="btn-boleta" onClick={() => verRecibo(indice)}>
+              Ver
             </button>
-          ) : null),
-        }]
-      : []),
+            {emitido && (
+              <button
+                type="button"
+                className="btn-recibo-enviar"
+                title="Abrir WhatsApp del cliente y descargar el recibo de este pago"
+                onClick={() => enviarRecibo(indice)}
+              >
+                <FontAwesomeIcon icon={faCommentDots} /> Enviar
+              </button>
+            )}
+            {puedeAnular && f.ORIGEN === "Abono" && (
+              <button type="button" className="btn-icon" title="Anular abono" onClick={() => anular(f)}>
+                <FontAwesomeIcon icon={faBan} />
+              </button>
+            )}
+          </div>
+        );
+      },
+    },
   ];
 
   return (
@@ -215,6 +265,9 @@ export default function AbonosVentaModal({ idVenta, onClose, onCambio }) {
           </div>
         )}
       </div>
+      {recibo && (
+        <ReciboModal key={`${recibo.numero}-${recibo.abono.IDABONO}`} recibo={recibo} onClose={() => setRecibo(null)} />
+      )}
     </div>
   );
 }

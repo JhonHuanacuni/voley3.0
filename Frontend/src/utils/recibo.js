@@ -110,14 +110,29 @@ function datosPago({ registro, alumna }) {
   };
 }
 
-function datosVenta({ registro }) {
+// Recibo de un abono de la venta: muestra ese abono y el pagado y saldo hasta ese momento.
+// Los abonos llegan ordenados por fecha, así que el acumulado es la suma hasta el abono elegido.
+export function reciboDeAbono(recibo, abonos, indice) {
+  const abono = abonos[indice];
+  const pagado = abonos.slice(0, indice + 1).reduce((suma, fila) => suma + Number(fila.MONTO || 0), 0);
+  const saldo = Math.max(Number(recibo.registro.PRECIO || 0) - pagado, 0);
+  return { ...recibo, abono: { ...abono, PAGADO: pagado, SALDO: saldo } };
+}
+
+function datosVenta({ registro, abono }) {
   const articulos = articulosBoleta(registro);
   const tallas = [...new Set(articulos.map((item) => item.TALLA).filter(Boolean))];
   const filas = articulos.map((item) => [
     tallas.length > 1 && item.TALLA ? `${item.PRODUCTO} - Talla ${item.TALLA}` : item.PRODUCTO,
     soles(item.PRECIO),
   ]);
-  if (Number(registro.SALDO) > 0) {
+  if (abono) {
+    filas.push(
+      [abono.ORIGEN === "Abono" ? `Abono ${abono.IDABONO}` : "Pago inicial", soles(abono.MONTO)],
+      ["Total pagado", soles(abono.PAGADO)],
+      ["Saldo pendiente", soles(abono.SALDO)],
+    );
+  } else if (Number(registro.SALDO) > 0) {
     filas.push(["A cuenta", soles(registro.PAGADO)], ["Saldo pendiente", soles(registro.SALDO)]);
   }
   return {
@@ -150,7 +165,7 @@ export async function pdfRecibo(recibo) {
 
   pagina.drawRectangle({ x: 458, y: ALTO_PAGINA - 178 - TAMANO - 2, width: 35, height: 14, color: rgb(1, 1, 1) });
   escribir(`N° ${recibo.numero}`, ...posiciones.numero, { alinear: "centro", ancho: 92 });
-  escribirFecha(escribir, recibo.registro.FECHA);
+  escribirFecha(escribir, recibo.abono?.FECHA || recibo.registro.FECHA);
   datos.campos.forEach(([valor, x, top, ancho]) => escribir(valor, x, top, { ancho }));
   escribirFilas(escribir, datos.filas, posiciones.filas, posiciones.montoX);
   escribir(soles(datos.total), ...posiciones.total, { alinear: "derecha", ancho: 95 });
@@ -168,7 +183,7 @@ export async function pdfRecibo(recibo) {
 }
 
 export function nombreArchivoRecibo(recibo) {
-  return `Recibo-${recibo.numero}.pdf`;
+  return recibo.abono ? `Recibo-${recibo.numero}-${recibo.abono.IDABONO}.pdf` : `Recibo-${recibo.numero}.pdf`;
 }
 
 export async function descargarRecibo(recibo) {
@@ -187,7 +202,34 @@ export function enlaceWhatsappRecibo(recibo, telefono = recibo.telefono) {
   const base = whatsappUrl(telefono);
   if (!base) return null;
   const nombre = String(recibo.nombre || "").trim();
-  const mensaje = `Hola${nombre ? ` ${nombre}` : ""}! Somos VOLEY VITA y este es tu recibo N° ${recibo.numero}. `
+  const { abono } = recibo;
+  const detalle = abono
+    ? `este es el comprobante de tu pago de ${soles(abono.MONTO)} del recibo N° ${recibo.numero}`
+      + (abono.SALDO > 0 ? ` (saldo pendiente: ${soles(abono.SALDO)}). ` : " (pagado por completo). ")
+    : `este es tu recibo N° ${recibo.numero}. `;
+  const mensaje = `Hola${nombre ? ` ${nombre}` : ""}! Somos VOLEY VITA y ${detalle}`
     + "Gracias por tu pago. Si necesitas algo, escríbenos aquí.";
   return `${base}?text=${encodeURIComponent(mensaje)}`;
+}
+
+// La pestaña se abre en el mismo clic: si se abre después de cargar datos, el navegador la bloquea.
+// Devuelve enviado = false cuando no hay celular válido, para que se muestre el recibo y se escriba ahí.
+export async function enviarReciboPorWhatsapp(cargarRecibo) {
+  const ventana = window.open("", "_blank");
+  if (ventana) ventana.opener = null;
+  try {
+    const datos = await cargarRecibo();
+    const enlace = enlaceWhatsappRecibo(datos);
+    if (!enlace) {
+      ventana?.close();
+      return { datos, enviado: false };
+    }
+    if (ventana) ventana.location.href = enlace;
+    else window.open(enlace, "_blank", "noopener,noreferrer");
+    await descargarRecibo(datos);
+    return { datos, enviado: true };
+  } catch (err) {
+    ventana?.close();
+    throw err;
+  }
 }
