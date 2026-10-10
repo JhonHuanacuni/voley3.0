@@ -1,4 +1,4 @@
-import { dbToInput, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+import { dbToInput, finDePeriodoInput, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
 import { OPERACIONES_AUDITORIA, TABLAS_AUDITORIA } from "../../utils/auditoria";
 import { parseJsonResponse } from "../../utils/api";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
@@ -383,11 +383,33 @@ export const pagoConfig = {
       obligatorio: true,
       ayuda: "Elige el periodo exacto, o NUEVA MENSUALIDAD para crear el periodo siguiente y pagarlo. El pago no puede superar el saldo.",
       rellena: (op) => {
-        if (op.value === "NUEVA") return { MONTOMENSUALIDAD: String(op.monto), MONTO: String(op.monto) };
+        if (op.value === "NUEVA") {
+          return {
+            INICIONUEVA: dbToInput(op.inicio),
+            FINNUEVA: dbToInput(op.fin),
+            MONTOMENSUALIDAD: String(op.monto),
+            MONTO: String(op.monto),
+          };
+        }
         return op.saldo > 0 ? { MONTO: String(op.saldo) } : {};
       },
     },
     { campo: "FECHA", etiqueta: "Fecha", control: "date", obligatorio: true, defaultHoy: true },
+    {
+      campo: "INICIONUEVA",
+      etiqueta: "Periodo desde",
+      control: "date",
+      obligatorio: true,
+      visibleSi: { campo: "IDMENSUALIDAD", valor: "NUEVA" },
+      ayuda: "Si la alumna volvió después de un tiempo, cambia la fecha de inicio.",
+    },
+    {
+      campo: "FINNUEVA",
+      etiqueta: "Periodo hasta",
+      control: "date",
+      obligatorio: true,
+      visibleSi: { campo: "IDMENSUALIDAD", valor: "NUEVA" },
+    },
     {
       campo: "MONTOMENSUALIDAD",
       etiqueta: "Monto de la nueva mensualidad (S/.)",
@@ -401,6 +423,7 @@ export const pagoConfig = {
   ],
   onFieldChange: (campo, valor, setValues) => {
     if (campo === "MONTOMENSUALIDAD") setValues((prev) => ({ ...prev, MONTO: valor }));
+    if (campo === "INICIONUEVA" && valor) setValues((prev) => ({ ...prev, FINNUEVA: finDePeriodoInput(valor) }));
   },
 };
 

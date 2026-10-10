@@ -19,7 +19,7 @@ export async function mensualidadesDeAlumna(idalumna) {
   return (data.data || []).map((item) => ({
     ...item,
     label: item.value === "NUEVA"
-      ? `NUEVA MENSUALIDAD · ${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · S/ ${Number(item.monto).toFixed(2)}`
+      ? `NUEVA MENSUALIDAD (eliges el periodo) · S/ ${Number(item.monto).toFixed(2)}`
       : `${dbToTexto(item.inicio)} al ${dbToTexto(item.fin)} · ${item.estado}${
         item.saldo > 0 ? ` · saldo S/ ${Number(item.saldo).toFixed(2)}` : ""
       }`,

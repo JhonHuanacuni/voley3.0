@@ -348,6 +348,8 @@ def _pago_valores(payload):
         texto(payload.get('MONTO')),
         texto(payload.get('MEDIO'), 30, mayusculas=False),
         texto(payload.get('MONTOMENSUALIDAD')),
+        texto(payload.get('INICIONUEVA'), 8),
+        texto(payload.get('FINNUEVA'), 8),
     ]
 
 

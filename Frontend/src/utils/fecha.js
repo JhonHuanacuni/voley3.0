@@ -47,6 +47,19 @@ export const ultimoDiaMesInput = (fechaRef) => {
   return rangoMesCompletoInput(ref).hasta;
 };
 
+/** Fin de un periodo de un mes que empieza en fechaInput (YYYY-MM-DD): un mes después menos un día.
+ *  Si el mes siguiente es más corto, se ajusta a su último día (igual que DATE_ADD de MySQL). */
+export const finDePeriodoInput = (fechaInput) => {
+  if (!fechaInput) return "";
+  const [y, m, d] = fechaInput.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const diaMesSiguiente = Math.min(d, new Date(y, m + 1, 0).getDate());
+  const fin = new Date(y, m, diaMesSiguiente - 1, 12);
+  const mm = String(fin.getMonth() + 1).padStart(2, "0");
+  const dd = String(fin.getDate()).padStart(2, "0");
+  return `${fin.getFullYear()}-${mm}-${dd}`;
+};
+
 /** Hoy en formato input date (YYYY-MM-DD). */
 export const hoyInput = () => {
   const hoy = new Date();

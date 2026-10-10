@@ -53,7 +53,8 @@ BEGIN
     ORDER BY ORDEN, INICIO DESC;
 END$$
 
--- Periodo que seguiría al último de la alumna. Las fechas siguen al último periodo aunque sea inactivo.
+-- Periodo sugerido para NUEVA MENSUALIDAD (en Pagos se puede cambiar). Sigue al último periodo, aunque
+-- sea inactivo; si ese periodo siguiente ya terminó (la alumna dejó de venir), se sugiere desde hoy.
 -- El monto sugerido es la tarifa de la ficha de la alumna (sin la promoción del periodo anterior);
 -- si no tiene tarifa, la tarifa regular o el monto de su último periodo activo.
 CREATE PROCEDURE usp_mensualidad_siguiente(
@@ -80,15 +81,19 @@ proc: BEGIN
     SET p_Monto = COALESCE(NULLIF(v_tarifa, 0), NULLIF(v_regular, 0), p_Monto);
     SELECT MAX(STR_TO_DATE(FECHAFIN, '%d%m%Y')) INTO v_ultimo FROM MENSUALIDAD WHERE IDALUMNA = p_IdAlumna;
     SET v_ini = DATE_ADD(v_ultimo, INTERVAL 1 DAY);
+    IF DATE_SUB(DATE_ADD(v_ini, INTERVAL 1 MONTH), INTERVAL 1 DAY) < CURDATE() THEN
+        SET v_ini = CURDATE();
+    END IF;
     SET p_Inicio = DATE_FORMAT(v_ini, '%d%m%Y');
     SET p_Fin = DATE_FORMAT(DATE_SUB(DATE_ADD(v_ini, INTERVAL 1 MONTH), INTERVAL 1 DAY), '%d%m%Y');
 END$$
 
--- Crea el periodo siguiente cuando se paga con NUEVA MENSUALIDAD. p_MontoMensualidad es el monto que
--- se escribió en el formulario (vacío = el sugerido). Valida el pago antes de insertar, para no dejar
--- un periodo creado si el pago no procede.
+-- Crea la mensualidad cuando se paga con NUEVA MENSUALIDAD. p_Inicio, p_Fin y p_MontoMensualidad son
+-- los que se eligieron en el formulario (vacíos = los sugeridos). Valida el periodo y el pago antes de
+-- insertar, para no dejar un periodo creado si el pago no procede.
 CREATE PROCEDURE usp_mensualidad_nueva_crear(
-    IN p_IdAlumna VARCHAR(50), IN p_MontoMensualidad DECIMAL(10,2), IN p_MontoPago DECIMAL(10,2),
+    IN p_IdAlumna VARCHAR(50), IN p_Inicio CHAR(8), IN p_Fin CHAR(8),
+    IN p_MontoMensualidad DECIMAL(10,2), IN p_MontoPago DECIMAL(10,2),
     OUT p_Id VARCHAR(50), OUT p_Error VARCHAR(200)
 )
 proc: BEGIN
@@ -96,10 +101,31 @@ proc: BEGIN
     DECLARE v_ini CHAR(8);
     DECLARE v_fin CHAR(8);
     DECLARE v_monto DECIMAL(10,2);
+    DECLARE v_cruce VARCHAR(60);
     SET p_Id = NULL;
     CALL usp_mensualidad_siguiente(p_IdAlumna, v_base, v_ini, v_fin, v_monto, p_Error);
     IF p_Error IS NOT NULL THEN
         LEAVE proc;
+    END IF;
+    IF NULLIF(p_Inicio, '') IS NOT NULL THEN
+        SET v_ini = p_Inicio;
+        SET v_fin = IFNULL(NULLIF(p_Fin, ''), DATE_FORMAT(DATE_SUB(DATE_ADD(STR_TO_DATE(v_ini, '%d%m%Y'),
+                                                  INTERVAL 1 MONTH), INTERVAL 1 DAY), '%d%m%Y'));
+    END IF;
+    IF STR_TO_DATE(v_ini, '%d%m%Y') IS NULL OR STR_TO_DATE(v_fin, '%d%m%Y') IS NULL THEN
+        SET p_Error = 'Ingresa el inicio y el fin del periodo.'; LEAVE proc;
+    END IF;
+    IF STR_TO_DATE(v_fin, '%d%m%Y') < STR_TO_DATE(v_ini, '%d%m%Y') THEN
+        SET p_Error = 'El fin del periodo no puede ser anterior al inicio.'; LEAVE proc;
+    END IF;
+    SELECT CONCAT(fn_fecha_vista(FECHAINICIO), ' al ', fn_fecha_vista(FECHAFIN)) INTO v_cruce
+      FROM MENSUALIDAD
+     WHERE IDALUMNA = p_IdAlumna AND ESTADO <> 'Inactivo'
+       AND STR_TO_DATE(FECHAINICIO, '%d%m%Y') <= STR_TO_DATE(v_fin, '%d%m%Y')
+       AND STR_TO_DATE(v_ini, '%d%m%Y') <= STR_TO_DATE(FECHAFIN, '%d%m%Y')
+     LIMIT 1;
+    IF v_cruce IS NOT NULL THEN
+        SET p_Error = CONCAT('La alumna ya tiene un periodo que se cruza con esas fechas (', v_cruce, ').'); LEAVE proc;
     END IF;
     IF p_MontoMensualidad IS NOT NULL THEN
         IF p_MontoMensualidad <= 0 THEN
@@ -587,11 +613,12 @@ proc: BEGIN
     END IF;
 END$$
 
--- p_IdMensualidad = 'NUEVA' crea primero el periodo siguiente al último de la alumna, por p_MontoMensualidad,
--- y le aplica el pago.
+-- p_IdMensualidad = 'NUEVA' crea primero la mensualidad del periodo p_InicioNueva al p_FinNueva,
+-- por p_MontoMensualidad, y le aplica el pago.
 CREATE PROCEDURE usp_pago_insertar(
     IN p_IdAlumna VARCHAR(50), IN p_IdMensualidad VARCHAR(50), IN p_Fecha CHAR(8),
     IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30), IN p_MontoMensualidad DECIMAL(10,2),
+    IN p_InicioNueva CHAR(8), IN p_FinNueva CHAR(8),
     OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
 )
 proc: BEGIN
@@ -603,7 +630,8 @@ proc: BEGIN
     DECLARE v_aviso VARCHAR(100) DEFAULT '';
     SET v_men = p_IdMensualidad;
     IF v_men = 'NUEVA' THEN
-        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_MontoMensualidad, p_Monto, v_men, v_error);
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_InicioNueva, p_FinNueva, p_MontoMensualidad, p_Monto,
+                                         v_men, v_error);
         IF v_error IS NOT NULL THEN
             SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
         END IF;
@@ -631,6 +659,7 @@ END$$
 CREATE PROCEDURE usp_pago_actualizar(
     IN p_Id VARCHAR(50), IN p_IdAlumna VARCHAR(50), IN p_IdMensualidad VARCHAR(50), IN p_Fecha CHAR(8),
     IN p_Monto DECIMAL(10,2), IN p_Medio VARCHAR(30), IN p_MontoMensualidad DECIMAL(10,2),
+    IN p_InicioNueva CHAR(8), IN p_FinNueva CHAR(8),
     OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
 )
 proc: BEGIN
@@ -646,7 +675,8 @@ proc: BEGIN
     SELECT IDMENSUALIDAD INTO v_men_ant FROM PAGO WHERE IDPAGO = p_Id;
     SET v_men = p_IdMensualidad;
     IF v_men = 'NUEVA' THEN
-        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_MontoMensualidad, p_Monto, v_men, v_error);
+        CALL usp_mensualidad_nueva_crear(p_IdAlumna, p_InicioNueva, p_FinNueva, p_MontoMensualidad, p_Monto,
+                                         v_men, v_error);
         IF v_error IS NOT NULL THEN
             SET p_Resultado = 0; SET p_Mensaje = v_error; LEAVE proc;
         END IF;
