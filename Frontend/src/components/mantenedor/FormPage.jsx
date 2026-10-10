@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faKey, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import FieldRenderer from "./fields/FieldRenderer";
@@ -82,6 +82,7 @@ export default function FormPage({
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState({});
   const [enviando, setEnviando] = useState(false);
+  const enviandoRef = useRef(false);
   const soloLectura = modo === "ver";
 
   const todosLosCampos = useMemo(
@@ -201,7 +202,7 @@ export default function FormPage({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (soloLectura) return onCancel();
-    if (!validate()) return;
+    if (enviandoRef.current || !validate()) return;
 
     const payload = {};
     todosLosCampos.forEach((c) => {
@@ -215,12 +216,15 @@ export default function FormPage({
     if (modo === "editar" && !payload.CONTRA) delete payload.CONTRA;
     aplicarCredencialesAuto(payload, modo);
 
+    // El ref bloquea el segundo envío de inmediato; el estado solo deshabilita el botón al volver a dibujar.
+    enviandoRef.current = true;
     try {
       setEnviando(true);
       await onSubmit(payload);
     } catch (err) {
       setErrors({ _form: err.message });
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   };

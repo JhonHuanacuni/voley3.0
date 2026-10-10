@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSpinner } from "@fortawesome/free-solid-svg-icons";
 import FieldRenderer from "./fields/FieldRenderer";
@@ -60,6 +60,7 @@ export default function FormModal({
   const [values, setValues] = useState({});
   const [errors, setErrors] = useState({});
   const [enviando, setEnviando] = useState(false);
+  const enviandoRef = useRef(false);
   const soloLectura = modo === "ver";
 
   const todosLosCampos = useMemo(
@@ -155,7 +156,7 @@ export default function FormModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (soloLectura) return onClose();
-    if (!validate()) return;
+    if (enviandoRef.current || !validate()) return;
 
     const payload = { ...values };
     todosLosCampos.forEach((c) => {
@@ -172,6 +173,7 @@ export default function FormModal({
     });
     if (modo === "editar" && !payload.CONTRA) delete payload.CONTRA;
 
+    enviandoRef.current = true;
     try {
       setEnviando(true);
       await onSubmit(payload);
@@ -179,6 +181,7 @@ export default function FormModal({
     } catch (err) {
       setErrors({ _form: err.message });
     } finally {
+      enviandoRef.current = false;
       setEnviando(false);
     }
   };

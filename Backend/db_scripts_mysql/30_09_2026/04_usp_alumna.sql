@@ -113,8 +113,21 @@ CREATE PROCEDURE usp_alumna_insertar(
 )
 proc: BEGIN
     DECLARE v_id VARCHAR(50);
+    DECLARE v_dup VARCHAR(50);
     IF p_Nombre IS NULL OR TRIM(p_Nombre) = '' THEN
         SET p_Resultado = 0; SET p_Mensaje = 'Ingresa el nombre de la alumna.'; LEAVE proc;
+    END IF;
+    -- Evita registrar dos veces a la misma alumna (doble clic o volver a inscribir a una retirada).
+    -- Solo se permite el mismo nombre si las dos tienen DNI y es distinto.
+    SELECT IDALUMNA INTO v_dup FROM ALUMNA
+     WHERE UPPER(TRIM(NOMBRE)) = UPPER(TRIM(p_Nombre))
+       AND (NULLIF(TRIM(IFNULL(p_Dni, '')), '') IS NULL OR DNI IS NULL OR DNI = TRIM(p_Dni))
+     ORDER BY IDALUMNA DESC LIMIT 1;
+    IF v_dup IS NOT NULL THEN
+        SET p_Resultado = 0;
+        SET p_Mensaje = CONCAT('Ya existe una alumna con ese nombre (', v_dup, '). Búscala en Alumnas o Retiradas; ',
+                               'si volvió, usa Reactivar en lugar de registrarla otra vez.');
+        LEAVE proc;
     END IF;
     IF p_IdCiclo IS NOT NULL AND NOT EXISTS (SELECT 1 FROM CICLO WHERE IDCICLO = p_IdCiclo) THEN
         SET p_Resultado = 0; SET p_Mensaje = 'El ciclo no existe.'; LEAVE proc;
