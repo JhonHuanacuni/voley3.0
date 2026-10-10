@@ -117,7 +117,7 @@ function datosPago({ registro, alumna }) {
   };
 }
 
-// Recibo de un abono de la venta: muestra los pagos hasta ese abono y el saldo que quedó.
+// Recibo de un abono de la venta: muestra los pagos hasta ese abono y lo pagado a esa fecha.
 // Los abonos llegan ordenados por fecha, así que el acumulado es la suma hasta el abono elegido.
 export function reciboDeAbono(recibo, abonos, indice) {
   const pagos = abonos.slice(0, indice + 1);
@@ -131,19 +131,21 @@ function etiquetaPago(pago) {
   return `${tipo} ${dbToView(String(pago.FECHA || ""))}${pago.MEDIO ? ` - ${pago.MEDIO}` : ""}`;
 }
 
-// Si la venta se pagó en partes (o queda saldo), se lista cada pago con el total pagado y el saldo.
+// Si la venta se pagó en partes (o queda saldo), el detalle son solo los pagos y el total es lo pagado.
 function datosVenta({ registro, abono, pagos = [] }) {
   const articulos = articulosBoleta(registro);
   const tallas = [...new Set(articulos.map((item) => item.TALLA).filter(Boolean))];
-  const filas = articulos.map((item) => [
-    tallas.length > 1 && item.TALLA ? `${item.PRODUCTO} - Talla ${item.TALLA}` : item.PRODUCTO,
-    soles(item.PRECIO),
-  ]);
   const pagado = abono ? abono.PAGADO : Number(registro.PAGADO || 0);
   const saldo = abono ? abono.SALDO : Number(registro.SALDO || 0);
-  if (pagos.length > 1 || saldo > 0) {
-    pagos.forEach((pago) => filas.push([etiquetaPago(pago), soles(pago.MONTO)]));
-    filas.push([pagos.length ? "Total pagado" : "A cuenta", soles(pagado)], ["Saldo pendiente", soles(saldo)]);
+  const enPartes = pagos.length > 0 && (pagos.length > 1 || saldo > 0);
+  const filas = enPartes
+    ? pagos.map((pago) => [etiquetaPago(pago), soles(pago.MONTO)])
+    : articulos.map((item) => [
+      tallas.length > 1 && item.TALLA ? `${item.PRODUCTO} - Talla ${item.TALLA}` : item.PRODUCTO,
+      soles(item.PRECIO),
+    ]);
+  if (!pagos.length && saldo > 0) {
+    filas.push(["A cuenta", soles(pagado)], ["Saldo pendiente", soles(saldo)]);
   }
   return {
     campos: [
@@ -153,7 +155,7 @@ function datosVenta({ registro, abono, pagos = [] }) {
       [registro.TURNO, 105, 256.69 - SOBRE_LINEA, 265],
     ],
     filas,
-    total: registro.PRECIO,
+    total: enPartes ? pagado : registro.PRECIO,
   };
 }
 
