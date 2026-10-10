@@ -1,5 +1,6 @@
 import { parseJsonResponse } from "./api";
 import { articulosBoleta, numeroBoleta, soles } from "./boletaVenta";
+import { dbToView } from "./fecha";
 import { whatsappUrl } from "./telefono";
 
 const PLANTILLAS = {
@@ -48,13 +49,19 @@ export async function prepararRecibo(tipo, fila) {
   const id = tipo === "pago" ? fila.IDPAGO : fila.IDVENTA;
   const detalle = await obtener(`${entidad}/${encodeURIComponent(id)}/`);
   const registro = { ...fila, ...detalle, TURNO: fila.TURNO || detalle.TURNO, PERIODO: fila.PERIODO || detalle.PERIODO };
-  const alumna = registro.IDALUMNA
-    ? await obtener(`alumnas/${encodeURIComponent(registro.IDALUMNA)}/`).catch(() => null)
-    : null;
+  const [alumna, pagos] = await Promise.all([
+    registro.IDALUMNA
+      ? obtener(`alumnas/${encodeURIComponent(registro.IDALUMNA)}/`).catch(() => null)
+      : null,
+    tipo === "venta"
+      ? obtener(`ventas/${encodeURIComponent(id)}/abonos/`).then((data) => data?.abonos || []).catch(() => [])
+      : [],
+  ]);
   return {
     tipo,
     registro,
     alumna,
+    pagos,
     numero: tipo === "pago" ? registro.IDPAGO : numeroBoleta(registro),
     nombre: alumna?.NOMBRE || registro.ALUMNA || registro.NOMBRE || "",
     telefono: alumna?.TELAPODERADO || alumna?.TELEFONO || "",
@@ -84,7 +91,7 @@ function escribirFecha(escribir, fecha) {
 
 function escribirFilas(escribir, filas, inicioTop, montoX) {
   const visibles = filas.length > MAX_FILAS
-    ? [...filas.slice(0, MAX_FILAS - 1), [`Y ${filas.length - MAX_FILAS + 1} artículos más`, ""]]
+    ? [...filas.slice(0, MAX_FILAS - 1), [`Y ${filas.length - MAX_FILAS + 1} conceptos más`, ""]]
     : filas;
   visibles.forEach(([descripcion, monto], indice) => {
     const top = inicioTop + indice * ALTO_FILA;
@@ -110,30 +117,33 @@ function datosPago({ registro, alumna }) {
   };
 }
 
-// Recibo de un abono de la venta: muestra ese abono y el pagado y saldo hasta ese momento.
+// Recibo de un abono de la venta: muestra los pagos hasta ese abono y el saldo que quedó.
 // Los abonos llegan ordenados por fecha, así que el acumulado es la suma hasta el abono elegido.
 export function reciboDeAbono(recibo, abonos, indice) {
-  const abono = abonos[indice];
-  const pagado = abonos.slice(0, indice + 1).reduce((suma, fila) => suma + Number(fila.MONTO || 0), 0);
+  const pagos = abonos.slice(0, indice + 1);
+  const pagado = pagos.reduce((suma, fila) => suma + Number(fila.MONTO || 0), 0);
   const saldo = Math.max(Number(recibo.registro.PRECIO || 0) - pagado, 0);
-  return { ...recibo, abono: { ...abono, PAGADO: pagado, SALDO: saldo } };
+  return { ...recibo, pagos, abono: { ...abonos[indice], PAGADO: pagado, SALDO: saldo } };
 }
 
-function datosVenta({ registro, abono }) {
+function etiquetaPago(pago) {
+  const tipo = pago.ORIGEN === "Abono" ? "Abono" : "Pago inicial";
+  return `${tipo} ${dbToView(String(pago.FECHA || ""))}${pago.MEDIO ? ` - ${pago.MEDIO}` : ""}`;
+}
+
+// Si la venta se pagó en partes (o queda saldo), se lista cada pago con el total pagado y el saldo.
+function datosVenta({ registro, abono, pagos = [] }) {
   const articulos = articulosBoleta(registro);
   const tallas = [...new Set(articulos.map((item) => item.TALLA).filter(Boolean))];
   const filas = articulos.map((item) => [
     tallas.length > 1 && item.TALLA ? `${item.PRODUCTO} - Talla ${item.TALLA}` : item.PRODUCTO,
     soles(item.PRECIO),
   ]);
-  if (abono) {
-    filas.push(
-      [abono.ORIGEN === "Abono" ? `Abono ${abono.IDABONO}` : "Pago inicial", soles(abono.MONTO)],
-      ["Total pagado", soles(abono.PAGADO)],
-      ["Saldo pendiente", soles(abono.SALDO)],
-    );
-  } else if (Number(registro.SALDO) > 0) {
-    filas.push(["A cuenta", soles(registro.PAGADO)], ["Saldo pendiente", soles(registro.SALDO)]);
+  const pagado = abono ? abono.PAGADO : Number(registro.PAGADO || 0);
+  const saldo = abono ? abono.SALDO : Number(registro.SALDO || 0);
+  if (pagos.length > 1 || saldo > 0) {
+    pagos.forEach((pago) => filas.push([etiquetaPago(pago), soles(pago.MONTO)]));
+    filas.push([pagos.length ? "Total pagado" : "A cuenta", soles(pagado)], ["Saldo pendiente", soles(saldo)]);
   }
   return {
     campos: [
