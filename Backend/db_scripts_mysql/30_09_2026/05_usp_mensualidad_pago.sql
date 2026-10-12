@@ -540,6 +540,7 @@ BEGIN
       AND (v_desde IS NULL OR STR_TO_DATE(p.FECHA, '%d%m%Y') >= v_desde)
       AND (v_hasta IS NULL OR STR_TO_DATE(p.FECHA, '%d%m%Y') <= v_hasta);
     SELECT p.IDPAGO, a.NOMBRE AS ALUMNA, p.IDALUMNA, c.NOMBRE AS CICLO, p.IDMENSUALIDAD, p.FECHA, p.MONTO, p.MEDIO,
+           IFNULL(NULLIF(TRIM(a.TELAPODERADO), ''), NULLIF(TRIM(a.TELEFONO), '')) AS TELEFONO,
            CONCAT(fn_fecha_vista(m.FECHAINICIO), ' - ', fn_fecha_vista(m.FECHAFIN)) AS PERIODO,
            m.ESTADO AS ESTADOPERIODO,
            fn_traza('PAGO', p.IDPAGO, 'R') AS REGISTRADOPOR,

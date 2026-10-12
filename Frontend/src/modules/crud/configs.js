@@ -364,13 +364,12 @@ export const pagoConfig = {
   columnas: [
     { campo: "IDPAGO", etiqueta: "Recibo" },
     { campo: "ALUMNA", etiqueta: "Alumna", mayusculas: true },
+    { campo: "TELEFONO", etiqueta: "Teléfono" },
     { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
     { campo: "FECHA", etiqueta: "Fecha", tipo: "fecha" },
     { campo: "PERIODO", etiqueta: "Periodo pagado" },
     { campo: "MONTO", etiqueta: "Monto", tipo: "decimal" },
-    { campo: "MEDIO", etiqueta: "Medio" },
     { campo: "ESTADOPERIODO", etiqueta: "Estado del periodo", tipo: "estadoPago" },
-    { campo: "REGISTRADOPOR", etiqueta: "Registrado por", tipo: "traza" },
   ],
   campos: [
     { campo: "IDALUMNA", etiqueta: "Alumna", control: "select", remoto: "alumnas", obligatorio: true, limpia: ["IDMENSUALIDAD"] },
