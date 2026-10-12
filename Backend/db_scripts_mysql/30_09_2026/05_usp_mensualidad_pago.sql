@@ -190,6 +190,7 @@ proc: BEGIN
     CALL usp_alumna_periodo_actual(v_alu);
 END$$
 
+-- No muestra alumnas retiradas (se ven en Retiradas; al reactivarlas vuelven a aparecer).
 -- TIPO: Matrícula si es el primer periodo de la alumna; Mensualidad en los siguientes.
 -- SITUACION: Pagada, Pendiente (aún en plazo), Vencida (terminó con saldo) o Inactivo.
 -- VIGENCIA: Vigente, Finalizada o Por iniciar según la fecha de hoy.
@@ -252,6 +253,7 @@ BEGIN
                ON pg.IDMENSUALIDAD = m.IDMENSUALIDAD
         WHERE (p_Buscar IS NULL OR p_Buscar = '' OR a.NOMBRE LIKE CONCAT('%', p_Buscar, '%')
                OR IFNULL(a.DNI, '') LIKE CONCAT(p_Buscar, '%') OR m.IDMENSUALIDAD LIKE CONCAT('%', p_Buscar, '%'))
+          AND a.ESTADO <> 'Retirada'
           AND (p_Estado IS NULL OR p_Estado = '' OR m.ESTADO = p_Estado)
           AND (p_IdCiclo IS NULL OR p_IdCiclo = '' OR a.IDCICLO = p_IdCiclo)
           AND (v_hasta IS NULL OR STR_TO_DATE(m.FECHAINICIO, '%d%m%Y') <= v_hasta)
