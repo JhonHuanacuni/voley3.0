@@ -59,7 +59,8 @@ BEGIN
     WHERE (p_Buscar IS NULL OR p_Buscar = '' OR a.NOMBRE LIKE CONCAT('%', p_Buscar, '%')
            OR IFNULL(a.DNI, '') LIKE CONCAT('%', p_Buscar, '%')
            OR IFNULL(a.APODERADO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(a.TELAPODERADO, '') LIKE CONCAT('%', p_Buscar, '%'))
+           OR IFNULL(a.TELAPODERADO, '') LIKE CONCAT('%', p_Buscar, '%')
+           OR IFNULL(a.TELEFONO, '') LIKE CONCAT('%', p_Buscar, '%'))
       AND (p_Estado IS NULL OR p_Estado = '' OR a.ESTADO = p_Estado)
       AND (p_IdCiclo IS NULL OR p_IdCiclo = '' OR a.IDCICLO = p_IdCiclo)
       AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)
@@ -67,6 +68,7 @@ BEGIN
       AND (v_hasta IS NULL OR STR_TO_DATE(NULLIF(IF(p_Estado = 'Retirada', a.FECHARETIRO, a.FECHAINSCRIPCION), ''), '%d%m%Y') <= v_hasta);
 
     SELECT a.IDALUMNA, a.NOMBRE, a.DNI, a.EDAD, a.ESTADO, a.CONDICION, a.TELAPODERADO,
+           IFNULL(NULLIF(TRIM(a.TELAPODERADO), ''), NULLIF(TRIM(a.TELEFONO), '')) AS TELEFONO,
            c.NOMBRE AS CICLO, t.NOMBRE AS TURNO, a.FINMENSUALIDAD, a.FECHAINSCRIPCION, a.FECHARETIRO
     FROM ALUMNA a
     LEFT JOIN CICLO c ON c.IDCICLO = a.IDCICLO
@@ -74,7 +76,8 @@ BEGIN
     WHERE (p_Buscar IS NULL OR p_Buscar = '' OR a.NOMBRE LIKE CONCAT('%', p_Buscar, '%')
            OR IFNULL(a.DNI, '') LIKE CONCAT('%', p_Buscar, '%')
            OR IFNULL(a.APODERADO, '') LIKE CONCAT('%', p_Buscar, '%')
-           OR IFNULL(a.TELAPODERADO, '') LIKE CONCAT('%', p_Buscar, '%'))
+           OR IFNULL(a.TELAPODERADO, '') LIKE CONCAT('%', p_Buscar, '%')
+           OR IFNULL(a.TELEFONO, '') LIKE CONCAT('%', p_Buscar, '%'))
       AND (p_Estado IS NULL OR p_Estado = '' OR a.ESTADO = p_Estado)
       AND (p_IdCiclo IS NULL OR p_IdCiclo = '' OR a.IDCICLO = p_IdCiclo)
       AND (p_IdTurno IS NULL OR p_IdTurno = '' OR a.IDTURNO = p_IdTurno)

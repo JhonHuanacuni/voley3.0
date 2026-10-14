@@ -50,7 +50,7 @@ const filtrosAlumna = [
 
 const columnasAlumna = [
   { campo: "NOMBRE", etiqueta: "Alumna", ordenable: true, mayusculas: true },
-  { campo: "DNI", etiqueta: "DNI" },
+  { campo: "TELEFONO", etiqueta: "Teléfono" },
   { campo: "CICLO", etiqueta: "Ciclo", mayusculas: true },
   { campo: "TURNO", etiqueta: "Turno" },
   { campo: "CONDICION", etiqueta: "Condición" },
@@ -120,7 +120,7 @@ export const alumnaConfig = {
   pk: "IDALUMNA",
   usaCatalogos: true,
   whatsapp: "TELAPODERADO",
-  placeholder: "Buscar por nombre, DNI o apoderado...",
+  placeholder: "Buscar por nombre, DNI, apoderado o teléfono...",
   tamanios: [10, 20, 30, 50],
   filtrosIniciales: { estado: "Activa" },
   filtros: filtrosAlumna,
