@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileExcel, faFileInvoiceDollar, faFilePdf, faHandHoldingDollar, faRotate, faUserCheck } from "@fortawesome/free-solid-svg-icons";
+import { faFileExcel, faFileInvoiceDollar, faFilePdf, faHandHoldingDollar, faRotate, faUserCheck, faUserSlash } from "@fortawesome/free-solid-svg-icons";
 import { parseJsonResponse } from "../../utils/api";
-import { dbToTexto, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
+import { dbToTexto, hoyInput, inputToDb, primerDiaMesInput, ultimoDiaMesInput } from "../../utils/fecha";
 import { descargarReporteVentas } from "../../utils/reporteVentas";
 import { alCambiarFunciones, puede } from "../../utils/sesion";
 import { abrirEstadoCuenta } from "../../utils/estadoCuenta";
@@ -165,7 +165,9 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
           ? await renovarPeriodo(confirm.id)
           : confirm.tipo === "reactivar"
             ? await reactivarAlumna(confirm.id)
-            : await crud.eliminar(confirm.id);
+            : confirm.tipo === "retirar"
+              ? await retirarAlumna(confirm.id, confirm.fecha, confirm.motivo)
+              : await crud.eliminar(confirm.id);
       setToast({ mensaje, tipo: "success" });
       setConfirm(null);
       crud.listar();
@@ -206,6 +208,21 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
     return data.mensaje;
   };
 
+  const retirarAlumna = async (id, fecha, motivo) => {
+    if (!fecha) throw new Error("Indica la fecha de retiro.");
+    const res = await fetch(`/api/alumnas/${encodeURIComponent(id)}/retirar/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-IdUsuario": localStorage.getItem("idusuario") || "",
+      },
+      body: JSON.stringify({ FECHARETIRO: inputToDb(fecha), MOTIVORETIRO: motivo || "" }),
+    });
+    const data = await parseJsonResponse(res);
+    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "No se pudo retirar a la alumna");
+    return data.mensaje;
+  };
+
   const accionesExtra = (cfg.acciones || [])
     .map((accion) => {
       if (accion === "renovar") {
@@ -219,6 +236,23 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
             tipo: "renovar",
             id: row[cfg.pk],
             nombre: `${row.ALUMNA} (${dbToTexto(row.FECHAINICIO)} al ${dbToTexto(row.FECHAFIN)})`,
+          }),
+        };
+      }
+      if (accion === "retirar") {
+        if (!puede("MODIFICAR_OPERACIONES")) return null;
+        return {
+          id: "retirar",
+          icono: faUserSlash,
+          titulo: "Retirar alumna",
+          clase: "btn-icon--retirar",
+          visible: (row) => String(row.ESTADO || "").toLowerCase() !== "retirada",
+          onClick: (row) => setConfirm({
+            tipo: "retirar",
+            id: row[cfg.pk],
+            nombre: row.NOMBRE,
+            fecha: hoyInput(),
+            motivo: "",
           }),
         };
       }
@@ -273,6 +307,13 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
         titulo: "Reactivar alumna",
         mensaje: `¿Reactivar a ${confirm.nombre}? Vuelve a la lista de alumnas activas y se borran la fecha y el motivo del retiro (quedan en la auditoría).`,
         boton: "Reactivar",
+      };
+    }
+    if (confirm.tipo === "retirar") {
+      return {
+        titulo: "Retirar alumna",
+        mensaje: `¿Retirar a ${confirm.nombre}? Pasa a Retiradas y deja de salir en la lista de activas. La matrícula y los pagos se conservan.`,
+        boton: "Retirar",
       };
     }
     return {
@@ -453,9 +494,34 @@ export default function CrudPage({ config, inicio, onIrANuevo }) {
         mensaje={textosConfirmacion().mensaje}
         confirmLabel={textosConfirmacion().boton}
         confirmando={confirmando}
+        ancho={confirm?.tipo === "retirar" ? "min(480px, 100%)" : undefined}
         onCancel={() => setConfirm(null)}
         onConfirm={confirmarEliminar}
-      />
+      >
+        {confirm?.tipo === "retirar" && (
+          <div className="retiro-campos">
+            <div className="form-field">
+              <label htmlFor="fecha-retiro">Fecha de retiro</label>
+              <input
+                id="fecha-retiro"
+                type="date"
+                value={confirm.fecha || ""}
+                onChange={(e) => setConfirm((prev) => ({ ...prev, fecha: e.target.value }))}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="motivo-retiro">Motivo</label>
+              <textarea
+                id="motivo-retiro"
+                rows={3}
+                value={confirm.motivo || ""}
+                placeholder="Opcional"
+                onChange={(e) => setConfirm((prev) => ({ ...prev, motivo: e.target.value }))}
+              />
+            </div>
+          </div>
+        )}
+      </ConfirmDialog>
       <ConfirmDialog
         abierto={Boolean(siguiente)}
         titulo={siguiente?.paso.titulo}

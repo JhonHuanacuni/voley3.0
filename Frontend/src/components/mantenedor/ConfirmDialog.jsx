@@ -8,17 +8,20 @@ export default function ConfirmDialog({
   confirmLabel = "Eliminar",
   cancelLabel = "Cancelar",
   variante = "danger",
+  ancho = "min(420px, 100%)",
+  children,
 }) {
   if (!abierto) return null;
 
   return (
     <div className="modal-overlay">
-      <div className="modal-panel" style={{ width: "min(420px, 100%)" }}>
+      <div className="modal-panel" style={{ width: ancho }}>
         <div className="modal-header">
           <h2>{titulo}</h2>
         </div>
         <div className="modal-body">
           <p style={{ margin: 0 }}>{mensaje}</p>
+          {children}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn-secondary" onClick={onCancel} disabled={confirmando}>

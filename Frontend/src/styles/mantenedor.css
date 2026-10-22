@@ -620,6 +620,22 @@ button.page-breadcrumb-link:hover {
   color: var(--color-danger);
 }
 
+.retiro-campos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.btn-icon--retirar {
+  color: #b45309;
+}
+
+.btn-icon--retirar:hover {
+  color: #9a3412;
+  background: #ffedd5;
+}
+
 .btn-icon--whatsapp {
   color: #25d366;
 }

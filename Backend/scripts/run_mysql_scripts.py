@@ -44,6 +44,7 @@ ORDER = [
     SCRIPTS / "11_usp_reportes_detalle.sql",
     SCRIPTS / "12_usp_accesos.sql",
     SCRIPTS / "13_usp_alumna_reactivar.sql",
+    SCRIPTS / "14_usp_alumna_retirar.sql",
 ]
 
 

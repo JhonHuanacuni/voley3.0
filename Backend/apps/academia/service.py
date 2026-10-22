@@ -157,6 +157,17 @@ def reactivar_alumna(id_registro):
     return _escribir('usp_alumna_reactivar', [id_registro])
 
 
+def retirar_alumna(id_registro, payload):
+    fecha = _fecha_param((payload or {}).get('FECHARETIRO'))
+    if (payload or {}).get('FECHARETIRO') and not fecha:
+        return 0, 'La fecha de retiro no es válida.'
+    return _escribir('usp_alumna_retirar', [
+        id_registro,
+        fecha,
+        texto((payload or {}).get('MOTIVORETIRO'), 500),
+    ])
+
+
 def listar_ciclos(params):
     return _listar('usp_ciclo_listar', _paginacion(params))
 
