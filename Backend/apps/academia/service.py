@@ -492,8 +492,8 @@ def _venta_valores(payload):
 def insertar_venta(payload):
     valores = _venta_valores(payload)
     if not valores[-3]:
-        return 0, 'Selecciona cada artículo y su importe.'
-    return _escribir('usp_venta_insertar', valores)
+        return 0, 'Selecciona cada artículo y su importe.', None
+    return _escribir_con_id('usp_venta_insertar', valores)
 
 
 def actualizar_venta(id_registro, payload):

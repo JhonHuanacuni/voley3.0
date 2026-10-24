@@ -328,7 +328,7 @@ CREATE PROCEDURE usp_venta_insertar(
     IN p_Nombre VARCHAR(200), IN p_Producto VARCHAR(150), IN p_Tipo VARCHAR(30), IN p_IdTurno VARCHAR(50),
     IN p_Talla VARCHAR(5), IN p_Obs VARCHAR(500), IN p_Precio DECIMAL(10,2), IN p_Medio VARCHAR(30),
     IN p_Fecha CHAR(8), IN p_Lineas TEXT, IN p_ACuenta DECIMAL(10,2), IN p_Usuario VARCHAR(50),
-    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200)
+    OUT p_Resultado INT, OUT p_Mensaje VARCHAR(200), OUT p_Id VARCHAR(50)
 )
 proc: BEGIN
     DECLARE v_id VARCHAR(50);
@@ -336,6 +336,7 @@ proc: BEGIN
     DECLARE v_cmp VARCHAR(30);
     DECLARE v_lineas INT DEFAULT 0;
     DECLARE v_usuario VARCHAR(50);
+    SET p_Id = NULL;
     SET v_tipo = IF(p_Tipo = 'Servicio', 'Servicio', 'Producto físico');
     SET v_usuario = NULLIF(TRIM(IFNULL(p_Usuario, '')), '');
     IF p_Nombre IS NULL OR TRIM(p_Nombre) = '' THEN
@@ -369,6 +370,7 @@ proc: BEGIN
      WHERE IDVENTA = v_id;
     CALL usp_venta_abono_sincronizar(v_id, v_usuario);
     SET p_Resultado = 1;
+    SET p_Id = v_id;
     IF v_tipo = 'Servicio' THEN
         SET p_Mensaje = CONCAT('Comprobante ', v_cmp, ' emitido. No se creó ni modificó ninguna mensualidad.');
     ELSE

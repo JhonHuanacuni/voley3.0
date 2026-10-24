@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseJsonResponse } from "../utils/api";
+import { mensajeErrorRed, parseJsonResponse } from "../utils/api";
 
 export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {} }) {
   const [items, setItems] = useState([]);
@@ -79,25 +79,35 @@ export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {
   };
 
   const insertar = async (payload) => {
-    const res = await fetch(`${baseUrl}/`, {
-      method: "POST",
-      headers: writeHeaders(),
-      body: JSON.stringify(payload),
-    });
-    const data = await parseJsonResponse(res);
-    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al crear");
-    return { mensaje: data.mensaje, id: data.id };
+    try {
+      const res = await fetch(`${baseUrl}/`, {
+        method: "POST",
+        headers: writeHeaders(),
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al crear");
+      return { mensaje: data.mensaje, id: data.id };
+    } catch (err) {
+      throw new Error(mensajeErrorRed(err));
+    }
   };
 
   const actualizar = async (id, payload) => {
-    const res = await fetch(`${baseUrl}/${encodeURIComponent(id)}/`, {
-      method: "PUT",
-      headers: writeHeaders(),
-      body: JSON.stringify(payload),
-    });
-    const data = await parseJsonResponse(res);
-    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al actualizar");
-    return data.mensaje;
+    try {
+      const res = await fetch(`${baseUrl}/${encodeURIComponent(id)}/`, {
+        method: "PUT",
+        headers: writeHeaders(),
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al actualizar");
+      return data.mensaje;
+    } catch (err) {
+      throw new Error(mensajeErrorRed(err));
+    }
   };
 
   const eliminar = async (id, params = {}) => {
@@ -107,12 +117,17 @@ export function useCrud({ entidad, pk = "ID", ordenInicial, filtrosIniciales = {
     const url = qs
       ? `${baseUrl}/${encodeURIComponent(id)}/?${qs}`
       : `${baseUrl}/${encodeURIComponent(id)}/`;
-    const res = await fetch(url, {
-      method: "DELETE",
-    });
-    const data = await parseJsonResponse(res);
-    if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al eliminar");
-    return data.mensaje;
+    try {
+      const res = await fetch(url, {
+        method: "DELETE",
+        keepalive: true,
+      });
+      const data = await parseJsonResponse(res);
+      if (!res.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al eliminar");
+      return data.mensaje;
+    } catch (err) {
+      throw new Error(mensajeErrorRed(err));
+    }
   };
 
   const toggleOrden = (campo) => {
